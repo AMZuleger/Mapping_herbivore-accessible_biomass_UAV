@@ -7,7 +7,7 @@ Accurate estimation of herbivore-accessible biomass is essential for understandi
 
 **Data structure:**
 
-- *Mapping_heterogeneous_biomass_UAV.R* - R-Code for the entire analysis.
+- *Mapping_herbivore-accessible_biomass_UAV.R* - R-Code for the entire analysis.
   - Code automatically downloads repository from GitHub and produces all Results and Figures (except for maps, which were created using QGIS).
   
 - *Data.zip* - Contains datasets required for the analysis:
