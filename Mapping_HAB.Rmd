@@ -1,0 +1,2370 @@
+---
+title: "Mapping herbivore-accessible biomass across a heterogeneous mountain landscape using multisensor high-resolution UAV data"
+author: "Annika Zuleger"
+output:
+  html_document:
+    df_print: paged
+---
+
+#### Skript to run analysis to model herbivore-accessible biomass in the Peneda-Gerês National Park
+
+## Load required packages
+
+```{r, message=FALSE , results='hide', warning=FALSE}
+library(dplyr)
+library(purrr)
+library(psych)
+library(car)
+library(mgcv)
+library(visreg)
+library(ggplot2)
+library(gridExtra)
+library(spdep)
+```
+
+### Load required data from GitHub
+
+```{r, message=FALSE, results='hide', warning=FALSE}
+set.seed(1234)
+
+data_path <- "H:/Biomass/Publication/Review/Data/"
+figures_path <- "H:/Biomass/Publication/Review/Figures/"
+
+biomass_data <- read.csv(file.path(data_path,"biomass_data_2024.csv"),header=T,sep=";")
+
+biomass_data$Plot <- as.factor(biomass_data$Plot)
+biomass_data$Transect <- as.factor(biomass_data$Transect)
+biomass_data$Patch <- as.factor(biomass_data$Patch)
+biomass_data$LULC_RF <- as.factor(biomass_data$LULC_RF)
+```
+
+### Field data summary statistics
+
+```{r, warning=FALSE}
+# Total cover
+mean(biomass_data$Total_cover,na.rm=T)
+median(biomass_data$Total_cover,na.rm=T)
+sd(biomass_data$Total_cover, na.rm = TRUE) / sqrt(nrow(biomass_data))
+quantile(biomass_data$Total_cover, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_cover = format(mean(Total_cover, na.rm = TRUE), nsmall = 2),
+            median_cover = format(median(Total_cover, na.rm = TRUE), nsmall = 2),
+            SE_cover = format(sd(Total_cover, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_cover = format(sd(Total_cover, na.rm = TRUE), nsmall = 2))
+
+
+# Shrub cover
+mean(biomass_data$Shrub_cover,na.rm=T)
+median(biomass_data$Shrub_cover,na.rm=T)
+sd(biomass_data$Shrub_cover, na.rm = TRUE) / sqrt(nrow(biomass_data))
+quantile(biomass_data$Shrub_cover, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_cover = format(mean(Shrub_cover, na.rm = TRUE), nsmall = 2),
+            median_cover = format(median(Shrub_cover, na.rm = TRUE), nsmall = 2),
+            SE_cover = format(sd(Shrub_cover, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_cover = format(sd(Shrub_cover, na.rm = TRUE), nsmall = 2))
+
+# Mean shrub height
+mean(biomass_data$Shrub_height_mean,na.rm=T)
+median(biomass_data$Shrub_height_mean,na.rm=T)
+sd(biomass_data$Shrub_height_mean, na.rm = TRUE) / sqrt(nrow(biomass_data))
+quantile(biomass_data$Shrub_height_mean, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_height = format(mean(Shrub_height_mean, na.rm = TRUE), nsmall = 2),
+            median_height = format(median(Shrub_height_mean, na.rm = TRUE), nsmall = 2),
+            SE_height = format(sd(Shrub_height_mean, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_height = format(sd(Shrub_height_mean, na.rm = TRUE), nsmall = 2))
+
+# Max shrub height
+mean(biomass_data$Shrub_height_max,na.rm=T)
+median(biomass_data$Shrub_height_max,na.rm=T)
+sd(biomass_data$Shrub_height_max, na.rm = TRUE) / sqrt(nrow(biomass_data))
+quantile(biomass_data$Shrub_height_max, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_height = format(mean(Shrub_height_max, na.rm = TRUE), nsmall = 2),
+            median_height = format(median(Shrub_height_max, na.rm = TRUE), nsmall = 2),
+            SE_height = format(sd(Shrub_height_max, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_height = format(sd(Shrub_height_max, na.rm = TRUE), nsmall = 2))
+
+
+# Herb cover
+mean(biomass_data$Herb_cover,na.rm=T)
+median(biomass_data$Herb_cover,na.rm=T)
+sd(biomass_data$Herb_cover, na.rm = TRUE) / sqrt(nrow(biomass_data))
+quantile(biomass_data$Herb_cover, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_cover = format(mean(Herb_cover, na.rm = TRUE), nsmall = 2),
+            median_cover = format(median(Herb_cover, na.rm = TRUE), nsmall = 2),
+            SE_cover = format(sd(Herb_cover, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_cover = format(sd(Herb_cover, na.rm = TRUE), nsmall = 2))
+
+# Mean Herb height
+mean(biomass_data$Herb_height_mean,na.rm=T)
+median(biomass_data$Herb_height_mean,na.rm=T)
+sd(biomass_data$Herb_height_mean, na.rm = TRUE) / sqrt(nrow(biomass_data))
+quantile(biomass_data$Herb_height_mean, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_height = format(mean(Herb_height_mean, na.rm = TRUE), nsmall = 2),
+            median_height = format(median(Herb_height_mean, na.rm = TRUE), nsmall = 2),
+            SE_height = format(sd(Herb_height_mean, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_height = format(sd(Herb_height_mean, na.rm = TRUE), nsmall = 2))
+
+# Max Herb height
+mean(biomass_data$Herb_height_max,na.rm=T)
+median(biomass_data$Herb_height_max,na.rm=T)
+sd(biomass_data$Herb_height_max, na.rm = TRUE) / sqrt(nrow(biomass_data))
+quantile(biomass_data$Herb_height_max, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_height = format(mean(Herb_height_max, na.rm = TRUE), nsmall = 2),
+            median_height = format(median(Herb_height_max, na.rm = TRUE), nsmall = 2),
+            SE_height = format(sd(Herb_height_max, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_height = format(sd(Herb_height_max, na.rm = TRUE), nsmall = 2))
+
+
+# Grass cover
+mean(biomass_data$Grass_cover,na.rm=T)
+median(biomass_data$Grass_cover,na.rm=T)
+sd(biomass_data$Grass_cover, na.rm = TRUE) / sqrt(nrow(biomass_data))
+quantile(biomass_data$Grass_cover, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_cover = format(mean(Grass_cover, na.rm = TRUE), nsmall = 2),
+            median_cover = format(median(Grass_cover, na.rm = TRUE), nsmall = 2),
+            SE_cover = format(sd(Grass_cover, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_cover = format(sd(Grass_cover, na.rm = TRUE), nsmall = 2))
+
+# Mean Grass height
+mean(biomass_data$Grass_height_mean,na.rm=T)
+median(biomass_data$Grass_height_mean,na.rm=T)
+sd(biomass_data$Grass_height_mean, na.rm = TRUE) / sqrt(nrow(biomass_data))
+quantile(biomass_data$Grass_height_mean, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_height = format(mean(Grass_height_mean, na.rm = TRUE), nsmall = 2),
+            median_height = format(median(Grass_height_mean, na.rm = TRUE), nsmall = 2),
+            SE_height = format(sd(Grass_height_mean, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_height = format(sd(Grass_height_mean, na.rm = TRUE), nsmall = 2))
+
+# Max Grass height
+mean(biomass_data$Grass_height_max,na.rm=T)
+median(biomass_data$Grass_height_max,na.rm=T)
+sd(biomass_data$Grass_height_max, na.rm = TRUE) / sqrt(nrow(biomass_data))
+quantile(biomass_data$Grass_height_max, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_height = format(mean(Grass_height_max, na.rm = TRUE), nsmall = 2),
+            median_height = format(median(Grass_height_max, na.rm = TRUE), nsmall = 2),
+            SE_height = format(sd(Grass_height_max, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_height = format(sd(Grass_height_max, na.rm = TRUE), nsmall = 2))
+
+
+## Plot heights 
+cols <- c(
+  Shrub = adjustcolor("#E69F00",   alpha.f = 0.40),
+  Herb  = adjustcolor("#CC79A7",  alpha.f = 0.40),
+  Grass = adjustcolor("#00D28A", alpha.f = 0.40)
+)
+border_cols <- c(Shrub = "#E69F00", Herb = "darkorchid1", Grass = "#00D28A")
+
+
+png(filename = file.path(figures_path,"Figure_S2_Height_distribution.png"),
+    width = 30, height = 15, units = "cm",bg = "white", res = 300)
+
+par(mfrow=c(1,2))
+
+# Mean heights
+
+hist(biomass_data$Shrub_height_mean, breaks = 20,
+     col = cols["Shrub"],  border = border_cols["Shrub"],
+     xlab = "Mean height (cm)", main = "Height distributions (mean)",   
+     ylim = c(0, 80))
+hist(biomass_data$Herb_height_mean,  breaks = 10,
+     col = cols["Herb"],  border = border_cols["Herb"],  add = TRUE)
+hist(biomass_data$Grass_height_mean, breaks = 10,
+     col = cols["Grass"], border = border_cols["Grass"], add = TRUE)
+
+add_quartile_lines <- function(x, col, lwd = 2) {
+  qs <- quantile(x, probs = c(.25, .5, .75), na.rm = TRUE)
+  abline(v = qs[1], col = col, lty = 3, lwd = lwd)  # Q1 – dotted
+  abline(v = qs[2], col = col, lty = 1, lwd = lwd)  # median – solid
+  abline(v = qs[3], col = col, lty = 3, lwd = lwd)  # Q3 – dotted
+}
+
+add_quartile_lines(biomass_data$Shrub_height_mean,  "#E69F00")
+add_quartile_lines(biomass_data$Herb_height_mean,   "#CC79A7")
+add_quartile_lines(biomass_data$Grass_height_mean,  "#00D28A")
+
+legend("topright", legend = names(cols), fill = cols, border = NA, bty = "n")
+
+abline(v = 25, lty = 4, lwd = 2)
+abline(v = 50, lty = 4, lwd = 2)
+abline(v = 100, lty = 4, lwd = 2)
+
+# Maximum heights
+
+hist(biomass_data$Shrub_height_max, breaks = 20,
+     col = cols["Shrub"],  border = border_cols["Shrub"],
+     xlab = "Mean height (cm)", main = "Height distributions (max)", 
+     ylim = c(0, 60))
+hist(biomass_data$Herb_height_max,  breaks = 10,
+     col = cols["Herb"],  border = border_cols["Herb"],  add = TRUE)
+hist(biomass_data$Grass_height_max, breaks = 10,
+     col = cols["Grass"], border = border_cols["Grass"], add = TRUE)
+
+add_quartile_lines <- function(x, col, lwd = 2) {
+  qs <- quantile(x, probs = c(.25, .5, .75), na.rm = TRUE)
+  abline(v = qs[1], col = col, lty = 3, lwd = lwd)  # Q1 – dotted
+  abline(v = qs[2], col = col, lty = 1, lwd = lwd)  # median – solid
+  abline(v = qs[3], col = col, lty = 3, lwd = lwd)  # Q3 – dotted
+}
+
+add_quartile_lines(biomass_data$Shrub_height_max,  "#E69F00")
+add_quartile_lines(biomass_data$Herb_height_max,   "#CC79A7")
+add_quartile_lines(biomass_data$Grass_height_max,  "#00D28A")
+
+legend("topright", legend = names(cols), fill = cols, border = NA, bty = "n")
+
+abline(v = 25, lty = 4, lwd = 2)
+abline(v = 50, lty = 4, lwd = 2)
+abline(v = 100, lty = 4, lwd = 2)
+
+dev.off()
+
+### Biomass 
+
+# Total biomass
+mean(biomass_data$Total_biomass,na.rm=T)
+median(biomass_data$Total_biomass,na.rm=T)
+sd(biomass_data$Total_biomass, na.rm = TRUE) / sqrt(nrow(biomass_data))
+quantile(biomass_data$Total_biomass, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Total_biomass, na.rm = TRUE), nsmall = 2),
+            median_biomass = format(median(Total_biomass, na.rm = TRUE), nsmall = 2),
+            SE_biomass = format(sd(Total_biomass, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Total_biomass, na.rm = TRUE), nsmall = 2))
+
+# Shrub biomass
+mean(biomass_data$Shrub_biomass,na.rm=T)
+median(biomass_data$Shrub_biomass,na.rm=T)
+sd(biomass_data$Shrub_biomass, na.rm = TRUE) / sqrt(nrow(biomass_data))
+quantile(biomass_data$Shrub_biomass, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Shrub_biomass, na.rm = TRUE), nsmall = 2),
+            median_biomass = format(median(Shrub_biomass, na.rm = TRUE), nsmall = 2),
+            SE_biomass = format(sd(Shrub_biomass, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Shrub_biomass, na.rm = TRUE), nsmall = 2))
+
+# Forb biomass
+mean(biomass_data$Forb_biomass,na.rm=T)
+median(biomass_data$Forb_biomass,na.rm=T)
+sd(biomass_data$Forb_biomass, na.rm = TRUE) / sqrt(nrow(biomass_data))
+quantile(biomass_data$Forb_biomass, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Forb_biomass, na.rm = TRUE), nsmall = 2),
+            median_biomass = format(median(Forb_biomass, na.rm = TRUE), nsmall = 2),
+            SE_biomass = format(sd(Forb_biomass, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Forb_biomass, na.rm = TRUE), nsmall = 2))
+
+# Grass biomass
+mean(biomass_data$Grass_biomass,na.rm=T)
+median(biomass_data$Grass_biomass,na.rm=T)
+sd(biomass_data$Grass_biomass, na.rm = TRUE) / sqrt(nrow(biomass_data))
+quantile(biomass_data$Grass_biomass, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Grass_biomass, na.rm = TRUE), nsmall = 2),
+            median_biomass = format(median(Grass_biomass, na.rm = TRUE), nsmall = 2),
+            SE_biomass = format(sd(Grass_biomass, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Grass_biomass, na.rm = TRUE), nsmall = 2))
+
+# Herbaceous biomass
+mean(biomass_data$Herb_biomass,na.rm=T)
+median(biomass_data$Herb_biomass,na.rm=T)
+sd(biomass_data$Herb_biomass, na.rm = TRUE) / sqrt(nrow(biomass_data))
+quantile(biomass_data$Herb_biomass, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Herb_biomass, na.rm = TRUE), nsmall = 2),
+            median_biomass = format(median(Herb_biomass, na.rm = TRUE), nsmall = 2),
+            SE_biomass = format(sd(Herb_biomass, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Herb_biomass, na.rm = TRUE), nsmall = 2))
+
+
+
+```
+
+### Check for variable correlation
+
+```{r, warning=FALSE}
+png(filename = file.path(figures_path,"Figure_S5.1_Correlation_plot.png"),
+    width = 30, height = 15, units = "cm",bg = "white", res = 300)
+corPlot(biomass_data[, c(22:24,26:42)],method="spearman",use = "complete.obs", main="Correlation Plot All Covariates",xlas=3,n=20,cex=0.4,scale=F,upper=F,cex.axis=0.8)
+dev.off()
+
+corloads = cor(biomass_data[, c(22:24,26:42)], use = "pairwise.complete.obs")
+dissimilarity = 1 - corloads
+distance = as.dist(dissimilarity) 
+
+png(filename = file.path(figures_path,"Figure_S5.2_Dissimilarity_tree.png"),
+    width = 30, height = 15, units = "cm",bg = "white", res = 300)
+plot(hclust(distance), main="Dissimilarity = 1 - Correlation", xlab="") 
+dev.off()
+
+lm_model_vrd <- lm(Herb_biomass ~ Elevation_mean + Slope_mean + Aspect_mean + NDVI_mean + AGH_mean + CC_min + vrd_0_mean + vrd_0.25_mean + vrd_0.5_mean + vrd_1_mean, data = biomass_data)
+vif(lm_model_vrd)
+
+lm_model_ph <- lm(Herb_biomass ~ Elevation_mean + Slope_mean + Aspect_mean + NDVI_mean + AGH_mean + CC_min + ph_0.25_mean + ph_0.5_mean + ph_1_mean, data = biomass_data)
+vif(lm_model_ph)
+
+```
+
+##### Fit biomass models to field data
+
+#### Total Biomass
+
+### Fit model
+
+```{r, warning=FALSE}
+# Fit model without Land-use as a variable
+model_total <- gam(Total_biomass ~ s(Elevation_mean, k=5) + s(Slope_mean, k=5) +
+                    s(Aspect_mean, bs = "cc", k = 5) +
+                    s(NDVI_mean, by = LULC_RF, k = 5) + s(AGH_mean, by = LULC_RF, k = 5) + 
+                    s(CC_min, k = 5) + s(vrd_0_mean, k = 5) + 
+                    s(vrd_0.25_mean, k = 5) + s(vrd_0.5_mean, k = 5) + s(vrd_1_mean, k = 5) +
+                    s(Transect, bs = "re"),
+                  data = biomass_data,
+                  method = 'REML',
+                  family = tw(),select=TRUE)
+
+# Check model 
+summary(model_total)
+gam.vcomp(model_total)
+par(mfrow=c(2,2))
+gam.check(model_total)
+
+# Fit model including Land-use as a variable
+model_total_lulc <- gam(Total_biomass ~ LULC_RF + s(Elevation_mean, k=5) + s(Slope_mean, k=5) +
+                          s(Aspect_mean, bs = "cc", k = 5) +
+                          s(NDVI_mean, by = LULC_RF, k = 5) + s(AGH_mean, by = LULC_RF, k = 5) + 
+                          s(CC_min, k = 5) + s(vrd_0_mean, k = 5) + 
+                          s(vrd_0.25_mean, k = 5) + s(vrd_0.5_mean, k = 5) + s(vrd_1_mean, k = 5) +
+                          s(Transect, bs = "re"),
+                        data = biomass_data,
+                        method = 'REML',
+                        family = tw(),select=TRUE)
+
+gam.vcomp(model_total_lulc)
+
+# Check model 
+summary(model_total_lulc)
+par(mfrow=c(2,2))
+gam.check(model_total_lulc)
+
+# Compare models
+AIC(model_total,model_total_lulc)
+anova(model_total,model_total_lulc,test="Chisq")
+# including land-use as variable significantly reduces model fit
+
+### Morans I of residuals to check if spatial autocorrelation is accounted for
+
+residuals_gam <- residuals(model_total)
+coords <- cbind(biomass_data$Lon, biomass_data$Lat)
+
+model_data <- model.frame(model_total)  
+used_rows <- as.numeric(rownames(model_data))
+coords_used <- coords[used_rows, ]
+
+k_values <- 1:15   # adjust as needed
+
+moran_results <- numeric(length(k_values))
+
+# Loop over k values
+for(i in seq_along(k_values)){
+  k <- k_values[i]
+  knn <- knearneigh(coords_used, k = k)
+  nb <- knn2nb(knn)
+  lw <- nb2listw(nb, style = "W", zero.policy = TRUE)
+  moran_test <- moran.test(residuals_gam, lw, zero.policy = TRUE)
+  moran_results[i] <- moran_test$estimate["Moran I statistic"]
+}
+
+# Combine results in a data frame for easy viewing
+moran_df_total <- data.frame(k = k_values, Moran_I_total = moran_results)
+print(moran_df_total)
+
+```
+
+### Predicted vs. Observed
+
+```{r, warning=FALSE}
+par(mfrow=c(1,1))
+biomass_data$Predicted_total <- predict(model_total, newdata = biomass_data, type = "response", exclude = "s(Transect)")
+plot(log(Predicted_total) ~ log(Total_biomass+0.01), biomass_data,xlim=c(0,7),ylim=c(0,7))
+abline(0,1)
+
+# Summary observed data (field)
+mean(biomass_data$Total_biomass,na.rm=T)
+median(biomass_data$Total_biomass,na.rm=T)
+sd(biomass_data$Total_biomass, na.rm = TRUE) / sqrt(nrow(biomass_data))
+sd(biomass_data$Total_biomass, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Total_biomass, na.rm = TRUE), nsmall = 2),
+            median_biomass = format(median(Total_biomass, na.rm = TRUE), nsmall = 2),
+            SE_biomass = format(sd(Total_biomass, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Total_biomass, na.rm = TRUE), nsmall = 2))
+
+# Summary prediced data
+mean(biomass_data$Predicted_total,na.rm=T)
+median(biomass_data$Predicted_total,na.rm=T)
+sd(biomass_data$Predicted_total, na.rm = TRUE) / sqrt(nrow(biomass_data))
+sd(biomass_data$Predicted_total, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Predicted_total, na.rm = TRUE), nsmall = 2),
+            median_biomass = format(median(Predicted_total, na.rm = TRUE), nsmall = 2),
+            SE_biomass = format(sd(Predicted_total, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Predicted_total, na.rm = TRUE), nsmall = 2))
+
+```
+
+### Visualize variable effect
+
+```{r, warning=FALSE}
+par(mfrow=c(3,2))
+visreg(model_total, "NDVI_mean", by = "LULC_RF", type = "conditional",main="NDVI_mean")
+visreg(model_total, "AGH_mean", by = "LULC_RF", type = "conditional",main="Above Ground Heigt (mean)")
+visreg(model_total, "Elevation_mean", type = "conditional",main="Elevation")
+visreg(model_total, "Slope_mean", type = "conditional",main="Slope")
+visreg(model_total, "Aspect_mean", type = "conditional",main="Aspect")
+visreg(model_total, "vrd_0.25_mean", type = "conditional",main="VRD_0.25")
+visreg(model_total, "vrd_1_mean", type = "conditional",main="VRD_1")
+```
+
+### Cross-validation
+
+```{r, warning=FALSE}
+# Create data frame to store results
+cv_mod <- data.frame(stat=c("R²","Dev.Exp","n","ß","mdf","rdf","RMSE_80","RMSE_20","CV_80","CV_20","Bias_80","Bias_20","R²_80","R²_20"))
+n_iterations <- 1000
+lulc_classes <- unique(biomass_data$LULC_RF)
+
+# Vector to store metrics from each iteration
+rmse_80_list <- numeric(n_iterations)
+rmse_20_list <- numeric(n_iterations)
+cv_80_list <- numeric(n_iterations)
+cv_20_list <- numeric(n_iterations)
+bias_80_list <- numeric(n_iterations)
+bias_20_list <- numeric(n_iterations)
+rsq_80_list <- numeric(n_iterations)
+rsq_20_list <- numeric(n_iterations)
+
+combined_results_total <- data.frame(
+  Iteration = integer(),
+  Dataset = character(),
+  Transect = integer(),
+  Patch = factor(),
+  Total_biomass = numeric(),
+  Pred_biomass = numeric(),
+  stringsAsFactors = FALSE
+)
+
+Sys.time()
+
+# Loop over the number of iterations
+for (i in 1:n_iterations) {
+  train_transects <- list()
+  test_transects <- list()
+  # Loop over each LULC_RF class to perform stratified sampling
+  for (lulc in lulc_classes) {
+    # Subset data for the current LULC_RF class
+    class_data <- biomass_data[biomass_data$LULC_RF == lulc, ]
+    # Get the unique transects for the current class
+    unique_transects <- unique(class_data$Transect)
+    # Perform stratified sampling: select 80% of the transects for training
+    selected_train_transects <- sample(unique_transects, size = round(0.8 * length(unique_transects)), replace = FALSE)
+    # Store the selected transects for training and testing
+    train_transects[[lulc]] <- selected_train_transects
+    test_transects[[lulc]] <- setdiff(unique_transects, selected_train_transects)
+  }
+  # Combine the selected transects across all LULC_RF classes for training and testing
+  train_transects_combined <- unlist(train_transects)
+  test_transects_combined <- unlist(test_transects)
+  # Split the data into 80% training and 20% testing based on the selected transects
+  data_80 <- biomass_data[biomass_data$Transect %in% train_transects_combined, ]
+  data_20 <- biomass_data[biomass_data$Transect %in% test_transects_combined, ]
+  # Ensure the levels of Patch are consistent in both training and testing data
+  levels(data_80$Patch) <- levels(biomass_data$Patch)
+  levels(data_20$Patch) <- levels(biomass_data$Patch)
+  #   # Fit the model on the 80% training data
+  model_rf_80 <- gam(model_total$formula,
+                     data = data_80,
+                     method = 'REML',
+                     family = tw(),select=T)
+  # Predict on the 80% training data
+  data_80$Pred_biomass <- predict(model_rf_80, newdata = data_80, type = "response", exclude = "s(Transect)")
+  # Estimate cv metrics
+  rmse_80 <- sqrt(mean((data_80$Total_biomass - data_80$Pred_biomass)^2,na.rm = T))
+  rmse_80_list[i] <- rmse_80
+  cv_80 <- (sd((data_80$Total_biomass - data_80$Pred_biomass), na.rm = TRUE) / mean(data_80$Total_biomass, na.rm = TRUE)) * 100
+  cv_80_list[i] <- cv_80
+  bias_80 <- mean(data_80$Pred_biomass - data_80$Total_biomass,na.rm=T)
+  bias_80_list[i] <- bias_80
+  # Predict on the 20% training data
+  data_20$Pred_biomass <- predict(model_rf_80, newdata = data_20, type = "response", exclude = "s(Transect)")
+  # Estimate cv metrics
+  rmse_20 <- sqrt(mean((data_20$Total_biomass - data_20$Pred_biomass)^2,na.rm = T))
+  rmse_20_list[i] <- rmse_20
+  cv_20 <- (sd((data_20$Total_biomass - data_20$Pred_biomass), na.rm = TRUE) / mean(data_20$Total_biomass, na.rm = TRUE)) * 100
+  cv_20_list[i] <- cv_20
+  bias_20 <- mean(data_20$Pred_biomass - data_20$Total_biomass,na.rm=T)
+  bias_20_list[i] <- bias_20
+  # Estimate R²
+  rsq80 <- summary(lm(data_80$Total_biomass~data_80$Pred_biomass))$adj.r.squared
+  rsq_80_list[i] <- rsq80
+  rsq20 <- summary(lm(data_20$Total_biomass~data_20$Pred_biomass))$adj.r.squared
+  rsq_20_list[i] <- rsq20
+  # Add a column for iteration and dataset type to data_80 and data_20
+  data_80$Iteration <- i
+  data_80$Dataset <- "Training"
+  data_20$Iteration <- i
+  data_20$Dataset <- "Testing"
+  # Append the predicted and original values to combined_results
+  combined_results_total <- rbind(
+    combined_results_total,
+    data_80[, c("Iteration", "Dataset", "Transect", "Patch", "Total_biomass", "Pred_biomass")],
+    data_20[, c("Iteration", "Dataset", "Transect", "Patch", "Total_biomass", "Pred_biomass")]
+  )
+}
+
+
+# Store metrics in data frame
+cv_mod$model_total[1] <- summary(model_total)$r.sq
+cv_mod$model_total[2] <- summary(model_total)$dev.expl
+cv_mod$model_total[3] <- summary(model_total)$n
+cv_mod$model_total[4] <- length(summary(model_total)$edf)
+cv_mod$model_total[5] <- sum(influence(model_total))
+cv_mod$model_total[6] <- df.residual(model_total)
+cv_mod$model_total[7] <- mean(rmse_80_list,na.rm=T)
+cv_mod$model_total[8] <- mean(rmse_20_list,na.rm=T)
+cv_mod$model_total[9] <- mean(cv_80_list,na.rm=T)
+cv_mod$model_total[10] <- mean(cv_20_list,na.rm=T)
+cv_mod$model_total[11] <- mean(bias_80_list,na.rm=T)
+cv_mod$model_total[12] <- mean(bias_20_list,na.rm=T)
+cv_mod$model_total[13] <- mean(rsq_80_list, na.rm = T)
+cv_mod$model_total[14] <- mean(rsq_20_list, na.rm = T)
+
+print(cv_mod)
+
+Sys.time()
+
+# Create log of observed and predicted biomass data, as well as intervals for plotting
+combined_results_total$Log_Predicted <- log(combined_results_total$Pred_biomass)
+combined_results_total$Log_Biomass <- log(combined_results_total$Total_biomass+0.01)
+combined_results_total$Biomass_Interval <- cut(
+  combined_results_total$Log_Biomass,
+  breaks = c(-Inf, 0, seq(1, 8, by = 1)),  # Define breaks: everything below 0, then intervals of 2
+  include.lowest = TRUE,
+  labels = c("<0", paste(seq(0, 7, by = 1), seq(1, 8, by = 1), sep = "-")) # Define labels
+)
+
+
+# Plot
+total_plot <- ggplot(na.omit(combined_results_total), aes(x = Biomass_Interval, y = Log_Predicted, fill = Dataset)) +
+  geom_boxplot(alpha = 0.6, position = position_dodge(width = 0.8)) +  # Boxplots for each interval
+  geom_abline(slope = 1, intercept = -1, linetype = "dashed", color = "black") + # Reference line
+  scale_y_continuous(limits = c(-2, 8), breaks = c(-2, 0, 2, 4, 6, 8)) + 
+  labs(
+    title = "",
+    x = "Log Total HAB",
+    y = "Log Predicted Total HAB"
+  ) +
+  scale_fill_manual(
+    values = c("Training" = "red", "Testing" = "blue"),  # Colors for the legend
+    labels = c("Training Set", "Test Set")  # Custom legend text
+  ) +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 16, angle = 45, hjust = 1),  # Rotate x-axis labels
+    axis.title.x = element_text(size = 16),
+    axis.text.y = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 20)
+  ) +
+  geom_text(
+    data = data.frame(x = 0.5, y = 7.1, 
+                      label = paste("Dev.Exp. =", round(cv_mod$model_total[2],2),"\nRMSE =", round(cv_mod$model_total[8],2),"\nBias =",round(cv_mod$model_total[12],2), "\nR² =", round(cv_mod$model_total[14],2))),
+    aes(x = x, y = y, label = label, hjust = 0),
+    size = 5, color = "red",
+    inherit.aes = F
+  )
+```
+
+#### Shrub Biomass
+
+### Fit model
+
+```{r, warning=FALSE}
+
+# Fit model without Land-use as a variable
+model_shrub <- gam(Shrub_biomass ~ s(Elevation_mean, k=5) + s(Slope_mean, k=5) +
+                      s(Aspect_mean, bs = "cc", k = 5) +
+                      s(NDVI_mean, by = LULC_RF, k = 5) + s(AGH_mean, by = LULC_RF, k = 5) + 
+                       s(CC_min, k = 5) + s(vrd_0_mean, k = 5) + 
+                      s(vrd_0.25_mean, k = 5) + s(vrd_0.5_mean, k = 5) + s(vrd_1_mean, k = 5) + 
+                      s(Transect, bs = "re"),
+                    data = biomass_data,
+                    method = 'REML',
+                    family = tw(),select=TRUE)
+
+# Check model
+summary(model_shrub)
+gam.vcomp(model_shrub)
+par(mfrow=c(2,2))
+gam.check(model_shrub)
+
+# Fit model including Land-use as a variable
+model_shrub_lulc <- gam(Shrub_biomass ~ LULC_RF + s(Elevation_mean, k=5) + s(Slope_mean, k=5) +
+                           s(Aspect_mean, bs = "cc", k = 5) +
+                           s(NDVI_mean, by = LULC_RF, k = 5) + s(AGH_mean, by = LULC_RF, k = 5) + 
+                           s(CC_min, k = 5) + s(vrd_0_mean, k = 5) + 
+                           s(vrd_0.25_mean, k = 5) + s(vrd_0.5_mean, k = 5) + s(vrd_1_mean, k = 5) + 
+                           s(Transect, bs = "re"),
+                    data = biomass_data,
+                    method = 'REML',
+                    family = tw(),select=TRUE)
+
+# Check model
+summary(model_shrub_lulc)
+gam.vcomp(model_shrub_lulc)
+par(mfrow=c(2,2))
+gam.check(model_shrub_lulc)
+
+# Compare models
+AIC(model_shrub, model_shrub_lulc)
+anova(model_shrub, model_shrub_lulc, test = "Chisq")
+# Model without LULC slightly better
+
+### Morans I of residuals to check if spatial autocorrelation is accounted for
+
+residuals_gam <- residuals(model_shrub)
+coords <- cbind(biomass_data$Lon, biomass_data$Lat)
+
+model_data <- model.frame(model_shrub)  
+used_rows <- as.numeric(rownames(model_data))
+coords_used <- coords[used_rows, ]
+
+k_values <- 1:15   # adjust as needed
+
+moran_results <- numeric(length(k_values))
+
+# Loop over k values
+for(i in seq_along(k_values)){
+  k <- k_values[i]
+  knn <- knearneigh(coords_used, k = k)
+  nb <- knn2nb(knn)
+  lw <- nb2listw(nb, style = "W", zero.policy = TRUE)
+  moran_test <- moran.test(residuals_gam, lw, zero.policy = TRUE)
+  moran_results[i] <- moran_test$estimate["Moran I statistic"]
+}
+
+# Combine results in a data frame for easy viewing
+moran_df_shrub <- data.frame(k = k_values, Moran_I_shrub = moran_results)
+print(moran_df_shrub)
+
+```
+
+### Predicted vs. Observed
+
+```{r, warning=FALSE}
+par(mfrow=c(1,1))
+biomass_data$Predicted_shrub <- predict(model_shrub, newdata = biomass_data, type = "response", exclude = "s(Transect)")
+plot(log(Predicted_shrub) ~ log(Shrub_biomass+0.01), biomass_data, xlim=c(0,7),ylim=c(0,7))
+abline(0,1)
+
+# Summary observed data
+mean(biomass_data$Shrub_biomass,na.rm=T)
+median(biomass_data$Shrub_biomass,na.rm=T)
+sd(biomass_data$Shrub_biomass, na.rm = TRUE) / sqrt(nrow(biomass_data))
+sd(biomass_data$Shrub_biomass, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Shrub_biomass, na.rm = TRUE), nsmall = 2),
+            median_biomass = format(median(Shrub_biomass, na.rm = TRUE), nsmall = 2),
+            SE_biomass = format(sd(Shrub_biomass, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Shrub_biomass, na.rm = TRUE), nsmall = 2))
+
+# Summary predicted data
+mean(biomass_data$Predicted_shrub,na.rm=T)
+median(biomass_data$Predicted_shrub,na.rm=T)
+sd(biomass_data$Predicted_shrub, na.rm = TRUE) / sqrt(nrow(biomass_data))
+sd(biomass_data$Predicted_shrub, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Predicted_shrub, na.rm = TRUE), nsmall = 2),
+            median_biomass = format(median(Predicted_shrub, na.rm = TRUE), nsmall = 2),
+            SE_biomass = format(sd(Predicted_shrub, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Predicted_shrub, na.rm = TRUE), nsmall = 2))
+
+```
+
+### Visualize variable effect
+
+```{r, warning=FALSE}
+par(mfrow=c(2,2))
+visreg(model_shrub, "NDVI_mean", by = "LULC_RF", type = "conditional",main="NDVI_mean")
+visreg(model_shrub, "AGH_mean", by = "LULC_RF", type = "conditional",main="Above Ground Heigt (mean)")
+visreg(model_shrub, "Elevation_mean", type = "conditional",main="Elevation")
+visreg(model_shrub, "Slope_mean", type = "conditional",main="Slope")
+visreg(model_shrub, "vrd_0.25_mean", type = "conditional",main="VRD_2")
+visreg(model_shrub, "vrd_1_mean", type = "conditional",main="VRD_2")
+```
+
+### Cross-validation
+
+```{r, warning=FALSE}
+# Create new dataframe for results
+combined_results_shrub <- data.frame(
+  Iteration = integer(),
+  Dataset = character(),
+  Transect = integer(),
+  Patch = factor(),
+  Shrub_biomass = numeric(),
+  Pred_biomass = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Loop over the number of iterations
+for (i in 1:n_iterations) {
+  train_transects <- list()
+  test_transects <- list()
+  # Loop over each LULC_RF class to perform stratified sampling
+  for (lulc in lulc_classes) {
+    # Subset data for the current LULC_RF class
+    class_data <- biomass_data[biomass_data$LULC_RF == lulc, ]
+    # Get the unique transects for the current class
+    unique_transects <- unique(class_data$Transect)
+    # Perform stratified sampling: select 80% of the transects for training
+    selected_train_transects <- sample(unique_transects, size = round(0.8 * length(unique_transects)), replace = FALSE)
+    # Store the selected transects for training and testing
+    train_transects[[lulc]] <- selected_train_transects
+    test_transects[[lulc]] <- setdiff(unique_transects, selected_train_transects)
+  }
+  # Combine the selected transects across all LULC_RF classes for training and testing
+  train_transects_combined <- unlist(train_transects)
+  test_transects_combined <- unlist(test_transects)
+  # Split the data into 80% training and 20% testing based on the selected transects
+  data_80 <- biomass_data[biomass_data$Transect %in% train_transects_combined, ]
+  data_20 <- biomass_data[biomass_data$Transect %in% test_transects_combined, ]
+  # Ensure the levels of Patch are consistent in both training and testing data
+  levels(data_80$Patch) <- levels(biomass_data$Patch)
+  levels(data_20$Patch) <- levels(biomass_data$Patch)
+  #   # Fit the model on the 80% training data
+  model_rf_80 <- gam(model_shrub$formula,
+                     data = data_80,
+                     method = 'REML',
+                     family = tw(),select=T)
+  # Predict on the 80% training data
+  data_80$Pred_biomass <- predict(model_rf_80, newdata = data_80, type = "response", exclude = "s(Transect)")
+  # Calculate cross-validation metrics
+  rmse_80 <- sqrt(mean((data_80$Shrub_biomass - data_80$Pred_biomass)^2,na.rm = T))
+  rmse_80_list[i] <- rmse_80
+  cv_80 <- (sd((data_80$Shrub_biomass - data_80$Pred_biomass), na.rm = TRUE) / mean(data_80$Shrub_biomass, na.rm = TRUE)) * 100
+  cv_80_list[i] <- cv_80
+  bias_80 <- mean(data_80$Pred_biomass - data_80$Shrub_biomass,na.rm=T)
+  bias_80_list[i] <- bias_80
+  # Predict on the 20% training data
+  data_20$Pred_biomass <- predict(model_rf_80, newdata = data_20, type = "response", exclude = "s(Transect)")
+  # Calculate cross-validation metrics
+  rmse_20 <- sqrt(mean((data_20$Shrub_biomass - data_20$Pred_biomass)^2,na.rm = T))
+  rmse_20_list[i] <- rmse_20
+  cv_20 <- (sd((data_20$Shrub_biomass - data_20$Pred_biomass), na.rm = TRUE) / mean(data_20$Shrub_biomass, na.rm = TRUE)) * 100
+  cv_20_list[i] <- cv_20
+  bias_20 <- mean(data_20$Pred_biomass - data_20$Shrub_biomass,na.rm=T)
+  bias_20_list[i] <- bias_20
+  # Calculate R²
+  rsq80 <- summary(lm(data_80$Shrub_biomass~data_80$Pred_biomass))$adj.r.squared
+  rsq20 <- summary(lm(data_20$Shrub_biomass~data_20$Pred_biomass))$adj.r.squared
+  rsq_80_list[i] <- rsq80
+  rsq_20_list[i] <- rsq20
+  # Add a column for iteration and dataset type to data_80 and data_20
+  data_80$Iteration <- i
+  data_80$Dataset <- "Training"
+  data_20$Iteration <- i
+  data_20$Dataset <- "Testing"
+  # Append the predicted and original values to combined_results
+  combined_results_shrub <- rbind(
+    combined_results_shrub,
+    data_80[, c("Iteration", "Dataset", "Transect", "Patch", "Shrub_biomass", "Pred_biomass")],
+    data_20[, c("Iteration", "Dataset", "Transect", "Patch", "Shrub_biomass", "Pred_biomass")]
+  )
+}
+
+# Store summary statistics
+cv_mod$model_shrub[1] <- summary(model_shrub)$r.sq
+cv_mod$model_shrub[2] <- summary(model_shrub)$dev.expl
+cv_mod$model_shrub[3] <- summary(model_shrub)$n
+cv_mod$model_shrub[4] <- length(summary(model_shrub)$edf)
+cv_mod$model_shrub[5] <- sum(influence(model_shrub))
+cv_mod$model_shrub[6] <- df.residual(model_shrub)
+cv_mod$model_shrub[7] <- mean(rmse_80_list,na.rm=T)
+cv_mod$model_shrub[8] <- mean(rmse_20_list,na.rm=T)
+cv_mod$model_shrub[9] <- mean(cv_80_list,na.rm=T)
+cv_mod$model_shrub[10] <- mean(cv_20_list,na.rm=T)
+cv_mod$model_shrub[11] <- mean(bias_80_list,na.rm=T)
+cv_mod$model_shrub[12] <- mean(bias_20_list,na.rm=T)
+cv_mod$model_shrub[13] <- mean(rsq_80_list, na.rm = T)
+cv_mod$model_shrub[14] <- mean(rsq_20_list, na.rm = T)
+
+print(cv_mod)
+
+# Create log / interval for plotting
+combined_results_shrub$Log_Predicted <- log(combined_results_shrub$Pred_biomass)
+combined_results_shrub$Log_Biomass <- log(combined_results_shrub$Shrub_biomass+0.01)
+combined_results_shrub$Biomass_Interval <- cut(
+  combined_results_shrub$Log_Biomass,
+  breaks = c(-Inf, 0, seq(1, 8, by = 1)),  # Define breaks: everything below 0, then intervals of 2
+  include.lowest = TRUE,
+  labels = c("<0", paste(seq(0, 7, by = 1), seq(1, 8, by = 1), sep = "-")) # Define labels
+)
+
+# Plot
+shrub_plot <- ggplot(na.omit(combined_results_shrub), aes(x = Biomass_Interval, y = Log_Predicted, fill = Dataset)) +
+  geom_boxplot(alpha = 0.6, position = position_dodge(width = 0.8)) +  # Boxplots for each interval
+  geom_abline(slope = 1, intercept = -1, linetype = "dashed", color = "black") + # Reference line
+  scale_y_continuous(limits = c(-2, 8), breaks = c(-2, 0, 2, 4, 6, 8)) + 
+  labs(
+    title = "",
+    x = "Log Shrub HAB",
+    y = "Log Predicted Shrub HAB"
+  ) +
+  scale_fill_manual(
+    values = c("Training" = "red", "Testing" = "blue"),  # Colors for the legend
+    labels = c("Training Set", "Test Set")  # Custom legend text
+  ) +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 16, angle = 45, hjust = 1),  # Rotate x-axis labels
+    axis.title.x = element_text(size = 16),
+    axis.text.y = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    legend.position = "none") +
+  geom_text(
+    data = data.frame(x = 0.6, y = 7.1, 
+                      label = paste("Dev.Exp. =", round(cv_mod$model_shrub[2],2),"\nRMSE =", round(cv_mod$model_shrub[8],2),"\nBias =",round(cv_mod$model_shrub[12],2), "\nR² =", round(cv_mod$model_shrub[14],2))),
+    aes(x = x, y = y, label = label, hjust = 0),
+    size = 5, color = "red",
+    inherit.aes = F
+  )
+```
+
+#### Forb Biomass
+
+### Fit model
+
+```{r, warning=FALSE}
+# Fit model without Land-use as a variable
+model_forb <- gam(Forb_biomass ~ s(Slope_mean, k=5) +
+                        s(Aspect_mean, bs = "cc", k = 5) +
+                        s(NDVI_mean, by = LULC_RF, k = 5) + s(AGH_mean, by = LULC_RF, k = 5) + 
+                        s(CC_min, k = 5) + s(vrd_0_mean, k = 5) + 
+                        s(vrd_0.25_mean, k = 5) + s(vrd_0.5_mean, k = 5) + s(vrd_1_mean, k = 5) + 
+                        s(Transect, bs = "re"),
+                      data = biomass_data,
+                      method = 'REML',
+                      family = tw(),select=TRUE)
+
+# Check model
+summary(model_forb)
+gam.vcomp(model_forb)
+par(mfrow=c(2,2))
+gam.check(model_forb)
+
+# Fit model including land-use as a variable
+model_forb_lulc <- gam(Forb_biomass ~ LULC_RF + s(Slope_mean, k=5) +
+                             s(Aspect_mean, bs = "cc", k = 5) +
+                             s(NDVI_mean, by = LULC_RF, k = 5) + s(AGH_mean, by = LULC_RF, k = 5) + 
+                              s(CC_min, k = 5) + s(vrd_0_mean, k = 5) + 
+                             s(vrd_0.25_mean, k = 5) + s(vrd_0.5_mean, k = 5) + s(vrd_1_mean, k = 5) + 
+                             s(Transect, bs = "re"),
+                      data = biomass_data,
+                      method = 'REML',
+                      family = tw(),select=TRUE)
+
+# Check model
+summary(model_forb_lulc)
+gam.vcomp(model_forb_lulc)
+par(mfrow=c(2,2))
+gam.check(model_forb_lulc)
+
+# Compare models
+AIC(model_forb,model_forb_lulc)
+anova(model_forb,model_forb_lulc,test="Chisq")
+
+### Morans I of residuals to check if spatial autocorrelation is accounted for
+
+residuals_gam <- residuals(model_forb)
+coords <- cbind(biomass_data$Lon, biomass_data$Lat)
+
+model_data <- model.frame(model_forb)  
+used_rows <- as.numeric(rownames(model_data))
+coords_used <- coords[used_rows, ]
+
+k_values <- 1:15   # adjust as needed
+
+moran_results <- numeric(length(k_values))
+
+# Loop over k values
+for(i in seq_along(k_values)){
+  k <- k_values[i]
+  knn <- knearneigh(coords_used, k = k)
+  nb <- knn2nb(knn)
+  lw <- nb2listw(nb, style = "W", zero.policy = TRUE)
+  moran_test <- moran.test(residuals_gam, lw, zero.policy = TRUE)
+  moran_results[i] <- moran_test$estimate["Moran I statistic"]
+}
+
+# Combine results in a data frame for easy viewing
+moran_df_forb <- data.frame(k = k_values, Moran_I_forb = moran_results)
+print(moran_df_forb)
+
+
+```
+
+### Predicted vs. Observed
+
+```{r, warning=FALSE}
+par(mfrow=c(1,1))
+biomass_data$Predicted_forb_lulc <- predict(model_forb_lulc, newdata = biomass_data, type = "response", exclude = "s(Transect)")
+plot(log(Predicted_forb_lulc) ~ log(Forb_biomass), biomass_data,xlim=c(0,4),ylim=c(0,4))
+abline(0,1)
+
+# Observed biomass
+mean(biomass_data$Forb_biomass,na.rm=T)
+median(biomass_data$Forb_biomass,na.rm=T)
+sd(biomass_data$Forb_biomass, na.rm = TRUE) / sqrt(nrow(biomass_data))
+sd(biomass_data$Forb_biomass, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Forb_biomass, na.rm = TRUE), nsmall = 2),
+            median_biomass = format(median(Forb_biomass, na.rm = TRUE), nsmall = 2),
+            SE_biomass = format(sd(Forb_biomass, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Forb_biomass, na.rm = TRUE), nsmall = 2))
+
+# Predicted biomass
+mean(biomass_data$Predicted_forb_lulc,na.rm=T)
+median(biomass_data$Predicted_forb_lulc,na.rm=T)
+sd(biomass_data$Predicted_forb_lulc, na.rm = TRUE) / sqrt(nrow(biomass_data))
+sd(biomass_data$Predicted_forb_lulc, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Predicted_forb_lulc, na.rm = TRUE), nsmall = 2),
+            median_biomass = format(median(Predicted_forb_lulc, na.rm = TRUE), nsmall = 2),
+            SE_biomass = format(sd(Predicted_forb_lulc, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Predicted_forb_lulc, na.rm = TRUE), nsmall = 2))
+
+```
+
+
+#### Visualize variable effects ####
+```{r, warning=FALSE}
+par(mfrow=c(2,2))
+visreg(model_forb_lulc, "NDVI_mean", by = "LULC_RF", type = "conditional",main="NDVI_mean")
+visreg(model_forb_lulc, "AGH_mean", by = "LULC_RF", type = "conditional",main="Above Ground Heigt (mean)")
+visreg(model_forb_lulc, "LULC_RF", type = "conditional",main="Land-use")
+visreg(model_forb_lulc, "Slope_mean", type = "conditional",main="Slope")
+visreg(model_forb_lulc, "Aspect_mean", type = "conditional",main="Aspect")
+visreg(model_forb_lulc, "vrd_1_mean", type = "conditional",main="VRD_2")
+```
+### Cross-validation
+
+```{r, warning=FALSE}
+combined_results_forb <- data.frame(
+  Iteration = integer(),
+  Dataset = character(),
+  Transect = integer(),
+  Patch = factor(),
+  Forb_biomass = numeric(),
+  Pred_biomass = numeric(),
+  stringsAsFactors = FALSE
+)
+
+
+# Loop over the number of iterations
+for (i in 1:n_iterations) {
+  train_transects <- list()
+  test_transects <- list()
+  # Loop over each LULC_RF class to perform stratified sampling
+  for (lulc in lulc_classes) {
+    # Subset data for the current LULC_RF class
+    class_data <- biomass_data[biomass_data$LULC_RF == lulc, ]
+    # Get the unique transects for the current class
+    unique_transects <- unique(class_data$Transect)
+    # Perform stratified sampling: select 80% of the transects for training
+    selected_train_transects <- sample(unique_transects, size = round(0.8 * length(unique_transects)), replace = FALSE)
+    # Store the selected transects for training and testing
+    train_transects[[lulc]] <- selected_train_transects
+    test_transects[[lulc]] <- setdiff(unique_transects, selected_train_transects)
+  }
+  # Combine the selected transects across all LULC_RF classes for training and testing
+  train_transects_combined <- unlist(train_transects)
+  test_transects_combined <- unlist(test_transects)
+  # Split the data into 80% training and 20% testing based on the selected transects
+  data_80 <- biomass_data[biomass_data$Transect %in% train_transects_combined, ]
+  data_20 <- biomass_data[biomass_data$Transect %in% test_transects_combined, ]
+  # Ensure the levels of Patch are consistent in both training and testing data
+  levels(data_80$Patch) <- levels(biomass_data$Patch)
+  levels(data_20$Patch) <- levels(biomass_data$Patch)
+  #   # Fit the model on the 80% training data
+  model_rf_80 <- gam(model_forb_lulc$formula,
+                     data = data_80,
+                     method = 'REML',
+                     family = tw(),select=T)
+  # Predict on the 80% training data
+  data_80$Pred_biomass <- predict(model_rf_80, newdata = data_80, type = "response", exclude = "s(Transect)")
+  # Calculate cross validation metrics
+  rmse_80 <- sqrt(mean((data_80$Forb_biomass - data_80$Pred_biomass)^2,na.rm = T))
+  rmse_80_list[i] <- rmse_80
+  cv_80 <- (sd((data_80$Forb_biomass - data_80$Pred_biomass), na.rm = TRUE) / mean(data_80$Forb_biomass, na.rm = TRUE)) * 100
+  cv_80_list[i] <- cv_80
+  bias_80 <- mean(data_80$Pred_biomass - data_80$Forb_biomass,na.rm=T)
+  bias_80_list[i] <- bias_80
+  # Predict on the 20% training data
+  data_20$Pred_biomass <- predict(model_rf_80, newdata = data_20, type = "response", exclude = "s(Transect)")
+  # Calculate cross validation metrics
+  rmse_20 <- sqrt(mean((data_20$Forb_biomass - data_20$Pred_biomass)^2,na.rm = T))
+  rmse_20_list[i] <- rmse_20
+  cv_20 <- (sd((data_20$Forb_biomass - data_20$Pred_biomass), na.rm = TRUE) / mean(data_20$Forb_biomass, na.rm = TRUE)) * 100
+  cv_20_list[i] <- cv_20
+  bias_20 <- mean(data_20$Pred_biomass - data_20$Forb_biomass,na.rm=T)
+  bias_20_list[i] <- bias_20
+  rsq80 <- summary(lm(data_80$Forb_biomass~data_80$Pred_biomass))$adj.r.squared
+  rsq20 <- summary(lm(data_20$Forb_biomass~data_20$Pred_biomass))$adj.r.squared
+  rsq_80_list[i] <- rsq80
+  rsq_20_list[i] <- rsq20
+  # Add a column for iteration and dataset type to data_80 and data_20
+  data_80$Iteration <- i
+  data_80$Dataset <- "Training"
+  data_20$Iteration <- i
+  data_20$Dataset <- "Testing"
+  # Append the predicted and original values to combined_results
+  combined_results_forb <- rbind(
+    combined_results_forb,
+    data_80[, c("Iteration", "Dataset", "Transect", "Patch", "Forb_biomass", "Pred_biomass")],
+    data_20[, c("Iteration", "Dataset", "Transect", "Patch", "Forb_biomass", "Pred_biomass")]
+  )
+}
+
+# Store summary statistics
+cv_mod$model_forb_lulc[1] <- summary(model_forb_lulc)$r.sq
+cv_mod$model_forb_lulc[2] <- summary(model_forb_lulc)$dev.expl
+cv_mod$model_forb_lulc[3] <- summary(model_forb_lulc)$n
+cv_mod$model_forb_lulc[4] <- length(summary(model_forb_lulc)$edf)
+cv_mod$model_forb_lulc[5] <- sum(influence(model_forb_lulc))
+cv_mod$model_forb_lulc[6] <- df.residual(model_forb_lulc)
+cv_mod$model_forb_lulc[7] <- mean(rmse_80_list,na.rm=T)
+cv_mod$model_forb_lulc[8] <- mean(rmse_20_list,na.rm=T)
+cv_mod$model_forb_lulc[9] <- mean(cv_80_list,na.rm=T)
+cv_mod$model_forb_lulc[10] <- mean(cv_20_list,na.rm=T)
+cv_mod$model_forb_lulc[11] <- mean(bias_80_list,na.rm=T)
+cv_mod$model_forb_lulc[12] <- mean(bias_20_list,na.rm=T)
+cv_mod$model_forb_lulc[13] <- mean(rsq_80_list, na.rm = T)
+cv_mod$model_forb_lulc[14] <- mean(rsq_20_list, na.rm = T)
+
+print(cv_mod)
+
+# Log / Interval for plotting
+combined_results_forb$Log_Predicted <- log(combined_results_forb$Pred_biomass)
+combined_results_forb$Log_Biomass <- log(combined_results_forb$Forb_biomass+0.01)
+combined_results_forb$Biomass_Interval <- cut(
+  combined_results_forb$Log_Biomass,
+  breaks = c(-Inf, 0, seq(1, 8, by = 1)),  # Define breaks: everything below 0, then intervals of 2
+  include.lowest = TRUE,
+  labels = c("<0", paste(seq(0, 7, by = 1), seq(1, 8, by = 1), sep = "-")) # Define labels
+)
+
+# Plot
+forb_plot <- ggplot(na.omit(combined_results_forb), aes(x = Biomass_Interval, y = Log_Predicted, fill = Dataset)) +
+  geom_boxplot(alpha = 0.6, position = position_dodge(width = 0.8)) +  # Boxplots for each interval
+  geom_abline(slope = 1, intercept = -1, linetype = "dashed", color = "black") + # Reference line
+  scale_y_continuous(limits = c(-2, 8), breaks = c(-2, 0, 2, 4, 6, 8)) + 
+  labs(
+    title = "",
+    x = "Log Forb Biomass",
+    y = "Log Predicted Forb Biomass"
+  ) +
+  scale_fill_manual(
+    values = c("Training" = "red", "Testing" = "blue"),  # Colors for the legend
+    labels = c("Training Set", "Test Set")  # Custom legend text
+  ) +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 16, angle = 45, hjust = 1),  # Rotate x-axis labels
+    axis.title.x = element_text(size = 16),
+    axis.text.y = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    legend.position = "none") +
+  geom_text(
+    data = data.frame(x = 0.6, y = 7.1, 
+                      label = paste("Dev.Exp. =", round(cv_mod$model_forb_lulc[2],2),"\nRMSE =", round(cv_mod$model_forb_lulc[8],2),"\nBias =",round(cv_mod$model_forb_lulc[12],2), "\nR² =", round(cv_mod$model_forb[14],2))),
+    aes(x = x, y = y, label = label, hjust = 0),
+    size = 5, color = "red",
+    inherit.aes = F
+  )
+
+```
+
+#### Grass Biomass
+
+### Fit model
+
+```{r, warning=FALSE}
+# Fit model without Land-use as a variable
+model_grass <- gam(Grass_biomass ~ s(Slope_mean, k=5) + s(Aspect_mean, bs = "cc", k = 5) +
+                         s(NDVI_mean, by = LULC_RF, k = 5) + s(AGH_mean, by = LULC_RF, k = 5) + 
+                          s(CC_min, k = 5) + s(vrd_0_mean, k = 5) + 
+                         s(vrd_0.25_mean, k = 5) + s(vrd_0.5_mean, k = 5) + s(vrd_1_mean, k = 5) + 
+                         s(Transect, bs = "re"),
+                       data = biomass_data,
+                       method = 'REML',
+                       family = tw(),select=TRUE)
+
+# Check model
+summary(model_grass)
+gam.vcomp(model_grass)
+par(mfrow=c(2,2))
+gam.check(model_grass)
+
+# Fit model including Land-use as a variable
+model_grass_lulc <- gam(Grass_biomass ~ LULC_RF + s(Slope_mean, k=5) + s(Aspect_mean, bs = "cc", k = 5) +
+                              s(NDVI_mean, by = LULC_RF, k = 5) + s(AGH_mean, by = LULC_RF, k = 5) + 
+                               s(CC_min, k = 5) + s(vrd_0_mean, k = 5) + 
+                              s(vrd_0.25_mean, k = 5) + s(vrd_0.5_mean, k = 5) + s(vrd_1_mean, k = 5) + 
+                              s(Transect, bs = "re"),
+                       data = biomass_data,
+                       method = 'REML',
+                       family = tw(),select=TRUE)
+
+# Check model
+summary(model_grass_lulc)
+gam.vcomp(model_grass)
+par(mfrow=c(2,2))
+gam.check(model_grass_lulc)
+
+#Compare models
+AIC(model_grass, model_grass_lulc)
+anova(model_grass, model_grass_lulc, test = "Chisq")
+
+### Morans I of residuals to check if spatial autocorrelation is accounted for
+
+residuals_gam <- residuals(model_grass)
+coords <- cbind(biomass_data$Lon, biomass_data$Lat)
+
+model_data <- model.frame(model_grass)  
+used_rows <- as.numeric(rownames(model_data))
+coords_used <- coords[used_rows, ]
+
+k_values <- 1:15   # adjust as needed
+
+moran_results <- numeric(length(k_values))
+
+# Loop over k values
+for(i in seq_along(k_values)){
+  k <- k_values[i]
+  knn <- knearneigh(coords_used, k = k)
+  nb <- knn2nb(knn)
+  lw <- nb2listw(nb, style = "W", zero.policy = TRUE)
+  moran_test <- moran.test(residuals_gam, lw, zero.policy = TRUE)
+  moran_results[i] <- moran_test$estimate["Moran I statistic"]
+}
+
+# Combine results in a data frame for easy viewing
+moran_df_grass <- data.frame(k = k_values, Moran_I_grass = moran_results)
+print(moran_df_grass)
+
+```
+
+### Predicted vs. Observed
+
+```{r, warning=FALSE}
+par(mfrow=c(1,1))
+biomass_data$Predicted_grass <- predict(model_grass_lulc, newdata = biomass_data, type = "response", exclude = "s(Transect)")
+plot(log(Predicted_grass) ~ log(Grass_biomass), biomass_data,xlim=c(0,4),ylim=c(0,4))
+abline(0,1)
+
+# Observed data summary
+mean(biomass_data$Grass_biomass,na.rm=T)
+median(biomass_data$Grass_biomass,na.rm=T)
+sd(biomass_data$Grass_biomass, na.rm = TRUE) / sqrt(nrow(biomass_data))
+sd(biomass_data$Grass_biomass, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Grass_biomass, na.rm = TRUE), nsmall = 2),
+            median_biomass = format(median(Grass_biomass, na.rm = TRUE), nsmall = 2),
+            SE_biomass = format(sd(Grass_biomass, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Grass_biomass, na.rm = TRUE), nsmall = 2))
+
+# Predicted data summary
+mean(biomass_data$Predicted_grass,na.rm=T)
+median(biomass_data$Predicted_grass,na.rm=T)
+sd(biomass_data$Predicted_grass, na.rm = TRUE) / sqrt(nrow(biomass_data))
+sd(biomass_data$Predicted_grass, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Predicted_grass, na.rm = TRUE), nsmall = 2),
+            median_biomass = format(median(Predicted_grass, na.rm = TRUE), nsmall = 2),
+            SE_biomass = format(sd(Predicted_grass, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Predicted_grass, na.rm = TRUE), nsmall = 2))
+
+```
+
+### Visualize variable effects
+
+```{r, warning=FALSE}
+par(mfrow=c(1,2))
+visreg(model_grass_lulc, "NDVI_mean", by = "LULC_RF", type = "conditional",main="NDVI_mean")
+visreg(model_grass_lulc, "AGH_mean", by = "LULC_RF", type = "conditional",main="Above Ground Heigt (max)")
+visreg(model_grass_lulc, "LULC_RF", type = "conditional",main="Land-use")
+visreg(model_grass_lulc, "Slope_mean", type = "conditional",main="Slope")
+visreg(model_grass_lulc, "Aspect_mean", type = "conditional",main="Aspect")
+```
+
+### Cross-validation 
+
+```{r, warning=FALSE}
+combined_results_grass <- data.frame(
+  Iteration = integer(),
+  Dataset = character(),
+  Transect = integer(),
+  Patch = factor(),
+  Grass_biomass = numeric(),
+  Pred_biomass = numeric(),
+  stringsAsFactors = FALSE
+)
+
+
+# Loop over the number of iterations
+for (i in 1:n_iterations) {
+  train_transects <- list()
+  test_transects <- list()
+  # Loop over each LULC_RF class to perform stratified sampling
+  for (lulc in lulc_classes) {
+    # Subset data for the current LULC_RF class
+    class_data <- biomass_data[biomass_data$LULC_RF == lulc, ]
+    # Get the unique transects for the current class
+    unique_transects <- unique(class_data$Transect)
+    # Perform stratified sampling: select 80% of the transects for training
+    selected_train_transects <- sample(unique_transects, size = round(0.8 * length(unique_transects)), replace = FALSE)
+    # Store the selected transects for training and testing
+    train_transects[[lulc]] <- selected_train_transects
+    test_transects[[lulc]] <- setdiff(unique_transects, selected_train_transects)
+  }
+  # Combine the selected transects across all LULC_RF classes for training and testing
+  train_transects_combined <- unlist(train_transects)
+  test_transects_combined <- unlist(test_transects)
+  # Split the data into 80% training and 20% testing based on the selected transects
+  data_80 <- biomass_data[biomass_data$Transect %in% train_transects_combined, ]
+  data_20 <- biomass_data[biomass_data$Transect %in% test_transects_combined, ]
+  # Ensure the levels of Patch are consistent in both training and testing data
+  levels(data_80$Patch) <- levels(biomass_data$Patch)
+  levels(data_20$Patch) <- levels(biomass_data$Patch)
+  #   # Fit the model on the 80% training data
+  model_rf_80 <- gam(model_grass_lulc$formula,
+                     data = data_80,
+                     method = 'REML',
+                     family = tw(),select=T)
+  # Predict on the 80% training data
+  data_80$Pred_biomass <- predict(model_rf_80, newdata = data_80, type = "response", exclude = "s(Transect)")
+  # Calculate cross-validation metrics
+  rmse_80 <- sqrt(mean((data_80$Grass_biomass - data_80$Pred_biomass)^2,na.rm = T))
+  rmse_80_list[i] <- rmse_80
+  cv_80 <- (sd((data_80$Grass_biomass - data_80$Pred_biomass), na.rm = TRUE) / mean(data_80$Grass_biomass, na.rm = TRUE)) * 100
+  cv_80_list[i] <- cv_80
+  bias_80 <- mean(data_80$Pred_biomass - data_80$Grass_biomass,na.rm=T)
+  bias_80_list[i] <- bias_80
+  # Predict on the 20% training data
+  data_20$Pred_biomass <- predict(model_rf_80, newdata = data_20, type = "response", exclude = "s(Transect)")
+  # Calculate cross-validation metrics
+  rmse_20 <- sqrt(mean((data_20$Grass_biomass - data_20$Pred_biomass)^2,na.rm = T))
+  rmse_20_list[i] <- rmse_20
+  cv_20 <- (sd((data_20$Grass_biomass - data_20$Pred_biomass), na.rm = TRUE) / mean(data_20$Grass_biomass, na.rm = TRUE)) * 100
+  cv_20_list[i] <- cv_20
+  bias_20 <- mean(data_20$Pred_biomass - data_20$Grass_biomass,na.rm=T)
+  bias_20_list[i] <- bias_20
+  rsq80 <- summary(lm(data_80$Grass_biomass~data_80$Pred_biomass))$adj.r.squared
+  rsq20 <- summary(lm(data_20$Grass_biomass~data_20$Pred_biomass))$adj.r.squared
+  rsq_80_list[i] <- rsq80
+  rsq_20_list[i] <- rsq20
+  # Add a column for iteration and dataset type to data_80 and data_20
+  data_80$Iteration <- i
+  data_80$Dataset <- "Training"
+  data_20$Iteration <- i
+  data_20$Dataset <- "Testing"
+  # Append the predicted and original values to combined_results
+  combined_results_grass <- rbind(
+    combined_results_grass,
+    data_80[, c("Iteration", "Dataset", "Transect", "Patch", "Grass_biomass", "Pred_biomass")],
+    data_20[, c("Iteration", "Dataset", "Transect", "Patch", "Grass_biomass", "Pred_biomass")]
+  )
+}
+
+# Summary statistics of MAE and rmse
+cv_mod$model_grass_lulc[1] <- summary(model_grass_lulc)$r.sq
+cv_mod$model_grass_lulc[2] <- summary(model_grass_lulc)$dev.expl
+cv_mod$model_grass_lulc[3] <- summary(model_grass_lulc)$n
+cv_mod$model_grass_lulc[4] <- length(summary(model_grass_lulc)$edf)
+cv_mod$model_grass_lulc[5] <- sum(influence(model_grass_lulc))
+cv_mod$model_grass_lulc[6] <- df.residual(model_grass_lulc)
+cv_mod$model_grass_lulc[7] <- mean(rmse_80_list,na.rm=T)
+cv_mod$model_grass_lulc[8] <- mean(rmse_20_list,na.rm=T)
+cv_mod$model_grass_lulc[9] <- mean(cv_80_list,na.rm=T)
+cv_mod$model_grass_lulc[10] <- mean(cv_20_list,na.rm=T)
+cv_mod$model_grass_lulc[11] <- mean(bias_80_list,na.rm=T)
+cv_mod$model_grass_lulc[12] <- mean(bias_20_list,na.rm=T)
+cv_mod$model_grass_lulc[13] <- mean(rsq_80_list, na.rm = T)
+cv_mod$model_grass_lulc[14] <- mean(rsq_20_list, na.rm = T)
+
+print(cv_mod)
+
+# Log / Interval for plotting
+combined_results_grass$Log_Predicted <- log(combined_results_grass$Pred_biomass)
+combined_results_grass$Log_Biomass <- log(combined_results_grass$Grass_biomass+0.01)
+combined_results_grass$Biomass_Interval <- cut(
+  combined_results_grass$Log_Biomass,
+  breaks = c(-Inf, 0, seq(1, 8, by = 1)),  # Define breaks: everything below 0, then intervals of 2
+  include.lowest = TRUE,
+  labels = c("<0", paste(seq(0, 7, by = 1), seq(1, 8, by = 1), sep = "-")) # Define labels
+)
+
+# Plot
+# Plot
+grass_plot <- ggplot(na.omit(combined_results_grass), aes(x = Biomass_Interval, y = Log_Predicted, fill = Dataset)) +
+  geom_boxplot(alpha = 0.6, position = position_dodge(width = 0.8)) +  # Boxplots for each interval
+  geom_abline(slope = 1, intercept = -1, linetype = "dashed", color = "black") + # Reference line
+  scale_y_continuous(limits = c(-2, 8), breaks = c(-2, 0, 2, 4, 6, 8)) + 
+  labs(
+    title = "",
+    x = "Log Grass Biomass",
+    y = "Log Predicted Grass Biomass"
+  ) +
+  scale_fill_manual(
+    values = c("Training" = "red", "Testing" = "blue"),  # Colors for the legend
+    labels = c("Training Set", "Test Set")  # Custom legend text
+  ) +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 16, angle = 45, hjust = 1),  # Rotate x-axis labels
+    axis.title.x = element_text(size = 16),
+    axis.text.y = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    legend.position = "none") +
+  geom_text(
+    data = data.frame(x = 0.6, y = 7.1, 
+                      label = paste("Dev.Exp =", round(cv_mod$model_grass[2],2),"\nRMSE =", round(cv_mod$model_grass[8],2),"\nBias =",round(cv_mod$model_grass[12],2), "\nR² =", round(cv_mod$model_grass[14],2))),
+    aes(x = x, y = y, label = label, hjust = 0),
+    size = 5, color = "red",
+    inherit.aes = F
+  )
+
+```
+
+#### Herbaceous Biomass
+
+### Fit model
+
+```{r, warning=FALSE}
+# Fit model without Land-use as variable 
+model_herbs <- gam(Herb_biomass ~ s(Slope_mean, k=5) + s(Aspect_mean, bs = "cc", k = 5) +
+                          s(NDVI_mean, by = LULC_RF, k = 5) + s(AGH_mean, by = LULC_RF, k = 5) + 
+                          s(CC_min, k = 5) + s(vrd_0_mean, k = 5) + 
+                          s(vrd_0.25_mean, k = 5) + s(vrd_0.5_mean, k = 5) + s(vrd_1_mean, k = 5) + 
+                          s(Transect, bs = "re"),
+                        data = biomass_data,
+                        method = 'REML',
+                        family = tw(),select=TRUE)
+
+# Check model
+summary(model_herbs)
+gam.vcomp(model_herbs)
+par(mfrow=c(2,2))
+gam.check(model_herbs)
+
+# Fit model including land-use as variable
+model_herbs_lulc <- gam(Herb_biomass ~ LULC_RF + s(Slope_mean, k=5) + s(Aspect_mean, bs = "cc", k = 5) +
+                               s(NDVI_mean, by = LULC_RF, k = 5) + s(AGH_mean, by = LULC_RF, k = 5) + 
+                               s(CC_min, k = 5) + s(vrd_0_mean, k = 5) + 
+                               s(vrd_0.25_mean, k = 5) + s(vrd_0.5_mean, k = 5) + s(vrd_1_mean, k = 5) + 
+                               s(Transect, bs = "re"),
+                        data = biomass_data,
+                        method = 'REML',
+                        family = tw(),select=TRUE)
+
+# Check model
+summary(model_herbs_lulc)
+gam.vcomp(model_herbs_lulc)
+par(mfrow=c(2,2))
+gam.check(model_herbs_lulc)
+
+# Compare models
+AIC(model_herbs, model_herbs_lulc)
+anova(model_herbs, model_herbs_lulc, test = "Chisq")
+
+### Morans I of residuals to check if spatial autocorrelation is accounted for
+
+residuals_gam <- residuals(model_herbs)
+coords <- cbind(biomass_data$Lon, biomass_data$Lat)
+
+model_data <- model.frame(model_herbs)  
+used_rows <- as.numeric(rownames(model_data))
+coords_used <- coords[used_rows, ]
+
+k_values <- 1:15   # adjust as needed
+
+moran_results <- numeric(length(k_values))
+
+# Loop over k values
+for(i in seq_along(k_values)){
+  k <- k_values[i]
+  knn <- knearneigh(coords_used, k = k)
+  nb <- knn2nb(knn)
+  lw <- nb2listw(nb, style = "W", zero.policy = TRUE)
+  moran_test <- moran.test(residuals_gam, lw, zero.policy = TRUE)
+  moran_results[i] <- moran_test$estimate["Moran I statistic"]
+}
+
+# Combine results in a data frame for easy viewing
+moran_df_herbs <- data.frame(k = k_values, Moran_I_herbs = moran_results)
+print(moran_df_herbs)
+
+dfs <- list(moran_df_total, moran_df_shrub, moran_df_forb, moran_df_grass, moran_df_herbs)
+
+morans_full <- round(reduce(dfs, full_join, by = "k"),2)
+print(morans_full)
+
+```
+
+### Predicted vs. Observed
+
+```{r, warning=FALSE}
+par(mfrow=c(1,1))
+biomass_data$Predicted_herb_lulc <- predict(model_herbs_lulc, newdata = biomass_data, type = "response", exclude = "s(Transect)")
+plot(log(Predicted_herb_lulc) ~ log(Herb_biomass), biomass_data, xlim=c(0,5), ylim=c(0,5))
+abline(0,1)
+
+# Observed data summary
+mean(biomass_data$Herb_biomass,na.rm=T)
+median(biomass_data$Herb_biomass,na.rm=T)
+sd(biomass_data$Herb_biomass, na.rm = TRUE) / sqrt(nrow(biomass_data))
+sd(biomass_data$Herb_biomass, na.rm = TRUE) 
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Herb_biomass, na.rm = TRUE), nsmall = 2),
+            median_biomass = format(median(Herb_biomass, na.rm = TRUE), nsmall = 2),
+            SE_biomass = format(sd(Herb_biomass, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Herb_biomass, na.rm = TRUE), nsmall = 2))
+
+# Predicted data summary
+mean(biomass_data$Predicted_herb_lulc,na.rm=T)
+median(biomass_data$Predicted_herb_lulc,na.rm=T)
+sd(biomass_data$Predicted_herb_lulc, na.rm = TRUE) / sqrt(nrow(biomass_data))
+sd(biomass_data$Predicted_herb_lulc, na.rm = TRUE)
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Predicted_herb_lulc, na.rm = TRUE), nsmall = 2),
+            median_biomass = format(median(Predicted_herb_lulc, na.rm = TRUE), nsmall = 2),
+            SE_biomass = format(sd(Predicted_herb_lulc, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Predicted_herb_lulc, na.rm = TRUE), nsmall = 2))
+
+```
+
+### Visualize variable effects
+
+```{r, warning=FALSE}
+par(mfrow=c(1,2))
+visreg(model_herbs_lulc, "NDVI_mean", by = "LULC_RF", type = "conditional",main="NDVI_mean")
+visreg(model_herbs_lulc, "AGH_mean", by = "LULC_RF", type = "conditional",main="Above Ground Heigt (mean)")
+visreg(model_herbs_lulc, "LULC_RF", type = "conditional",main="Land-use")
+visreg(model_herbs_lulc, "Slope_mean", type = "conditional",main="Slope")
+```
+
+### Cross-validation
+
+```{r, warning=FALSE}
+combined_results_herb <- data.frame(
+  Iteration = integer(),
+  Dataset = character(),
+  Transect = integer(),
+  Patch = factor(),
+  Herb_biomass = numeric(),
+  Pred_biomass = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Loop over the number of iterations
+for (i in 1:n_iterations) {
+  train_transects <- list()
+  test_transects <- list()
+  # Loop over each LULC_RF class to perform stratified sampling
+  for (lulc in lulc_classes) {
+    # Subset data for the current LULC_RF class
+    class_data <- biomass_data[biomass_data$LULC_RF == lulc, ]
+    # Get the unique transects for the current class
+    unique_transects <- unique(class_data$Transect)
+    # Perform stratified sampling: select 80% of the transects for training
+    selected_train_transects <- sample(unique_transects, size = round(0.8 * length(unique_transects)), replace = FALSE)
+    # Store the selected transects for training and testing
+    train_transects[[lulc]] <- selected_train_transects
+    test_transects[[lulc]] <- setdiff(unique_transects, selected_train_transects)
+  }
+  # Combine the selected transects across all LULC_RF classes for training and testing
+  train_transects_combined <- unlist(train_transects)
+  test_transects_combined <- unlist(test_transects)
+  # Split the data into 80% training and 20% testing based on the selected transects
+  data_80 <- biomass_data[biomass_data$Transect %in% train_transects_combined, ]
+  data_20 <- biomass_data[biomass_data$Transect %in% test_transects_combined, ]
+  # Ensure the levels of Patch are consistent in both training and testing data
+  levels(data_80$Patch) <- levels(biomass_data$Patch)
+  levels(data_20$Patch) <- levels(biomass_data$Patch)
+  #   # Fit the model on the 80% training data
+  model_rf_80 <- gam(model_herbs_lulc $formula,
+                     data = data_80,
+                     method = 'REML',
+                     family = tw(),select=T)
+  # Predict on the 80% training data
+  data_80$Pred_biomass <- predict(model_rf_80, newdata = data_80, type = "response", exclude = "s(Transect)")
+  # Calculate cross-validation metrics
+  rmse_80 <- sqrt(mean((data_80$Herb_biomass - data_80$Pred_biomass)^2,na.rm = T))
+  rmse_80_list[i] <- rmse_80
+  cv_80 <- (sd((data_80$Herb_biomass - data_80$Pred_biomass), na.rm = TRUE) / mean(data_80$Herb_biomass, na.rm = TRUE)) * 100
+  cv_80_list[i] <- cv_80
+  bias_80 <- mean(data_80$Pred_biomass - data_80$Herb_biomass,na.rm=T)
+  bias_80_list[i] <- bias_80
+  # Predict on the 20% training data
+  data_20$Pred_biomass <- predict(model_rf_80, newdata = data_20, type = "response", exclude = "s(Transect)")
+  # Calculate cross-validation metrics
+  rmse_20 <- sqrt(mean((data_20$Herb_biomass - data_20$Pred_biomass)^2,na.rm = T))
+  rmse_20_list[i] <- rmse_20
+  cv_20 <- (sd((data_20$Herb_biomass - data_20$Pred_biomass), na.rm = TRUE) / mean(data_20$Herb_biomass, na.rm = TRUE)) * 100
+  cv_20_list[i] <- cv_20
+  bias_20 <- mean(data_20$Pred_biomass - data_20$Herb_biomass,na.rm=T)
+  bias_20_list[i] <- bias_20
+  rsq80 <- summary(lm(data_80$Herb_biomass~data_80$Pred_biomass))$adj.r.squared
+  rsq20 <- summary(lm(data_20$Herb_biomass~data_20$Pred_biomass))$adj.r.squared
+  rsq_80_list[i] <- rsq80
+  rsq_20_list[i] <- rsq20
+  # Add a column for iteration and dataset type to data_80 and data_20
+  data_80$Iteration <- i
+  data_80$Dataset <- "Training"
+  data_20$Iteration <- i
+  data_20$Dataset <- "Testing"
+  # Append the predicted and original values to combined_results
+  combined_results_herb <- rbind(
+    combined_results_herb,
+    data_80[, c("Iteration", "Dataset", "Transect", "Patch", "Herb_biomass", "Pred_biomass")],
+    data_20[, c("Iteration", "Dataset", "Transect", "Patch", "Herb_biomass", "Pred_biomass")]
+  )
+}
+
+# Summary statistics of MAE and rmse
+cv_mod$model_herbs_lulc[1] <- summary(model_herbs_lulc)$r.sq
+cv_mod$model_herbs_lulc[2] <- summary(model_herbs_lulc)$dev.expl
+cv_mod$model_herbs_lulc[3] <- summary(model_herbs_lulc)$n
+cv_mod$model_herbs_lulc[4] <- length(summary(model_herbs_lulc)$edf)
+cv_mod$model_herbs_lulc[5] <- sum(influence(model_herbs_lulc))
+cv_mod$model_herbs_lulc[6] <- df.residual(model_herbs_lulc)
+cv_mod$model_herbs_lulc[7] <- mean(rmse_80_list,na.rm=T)
+cv_mod$model_herbs_lulc[8] <- mean(rmse_20_list,na.rm=T)
+cv_mod$model_herbs_lulc[9] <- mean(cv_80_list,na.rm=T)
+cv_mod$model_herbs_lulc[10] <- mean(cv_20_list,na.rm=T)
+cv_mod$model_herbs_lulc[11] <- mean(bias_80_list,na.rm=T)
+cv_mod$model_herbs_lulc[12] <- mean(bias_20_list,na.rm=T)
+cv_mod$model_herbs_lulc[13] <- mean(rsq_80_list, na.rm = T)
+cv_mod$model_herbs_lulc[14] <- mean(rsq_20_list, na.rm = T)
+
+print(cv_mod)
+
+# Log / Interval for plotting
+combined_results_herb$Log_Predicted <- log(combined_results_herb$Pred_biomass)
+combined_results_herb$Log_Biomass <- log(combined_results_herb$Herb_biomass+0.01)
+combined_results_herb$Biomass_Interval <- cut(
+  combined_results_herb$Log_Biomass,
+  breaks = c(-Inf, 0, seq(1, 6, by = 1)),  # Define breaks: everything below 0, then intervals of 2
+  include.lowest = TRUE,
+  labels = c("<0", paste(seq(0, 5, by = 1), seq(1, 6, by = 1), sep = "-")) # Define labels
+)
+
+# Plot
+herb_plot <- ggplot(na.omit(combined_results_herb), aes(x = Biomass_Interval, y = Log_Predicted, fill = Dataset)) +
+  geom_boxplot(alpha = 0.6, position = position_dodge(width = 0.8)) +  # Boxplots for each interval
+  geom_abline(slope = 1, intercept = -1, linetype = "dashed", color = "black") + # Reference line
+  scale_y_continuous(limits = c(-2, 6), breaks = c(-2, 0, 2, 4, 6)) + 
+  labs(
+    title = "",
+    x = "Log Herbaceous HAB",
+    y = "Log Predicted Herbaceous HAB"
+  ) +
+  scale_fill_manual(
+    values = c("Training" = "red", "Testing" = "blue"),  # Colors for the legend
+    labels = c("Training Set", "Test Set")  # Custom legend text
+  ) +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 16, angle = 45, hjust = 1),  # Rotate x-axis labels
+    axis.title.x = element_text(size = 16),
+    axis.text.y = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    legend.position = "none") +
+  geom_text(
+    data = data.frame(x = 0.6, y = 5.3, 
+                      label = paste("Dev.Exp. =", round(cv_mod$model_herbs_lulc[2],2),"\nRMSE =", round(cv_mod$model_herbs_lulc[8],2),"\nBias =",round(cv_mod$model_herbs_lulc[12],2), "\nR² =", round(cv_mod$model_herbs_lulc[14],2))),
+    aes(x = x, y = y, label = label, hjust = 0),
+    size = 5, color = "red",
+    inherit.aes = F
+  )
+```
+
+##### Plots
+
+### Plot variable importance per model
+
+```{r, warning=FALSE}
+variable_order <- c("s(Elevation_mean)", "s(Slope_mean)", "s(Aspect_mean)", "s(NDVI_mean):LULC_RFOakForest", 
+                    "s(NDVI_mean):LULC_RFAgriculture", "s(NDVI_mean):LULC_RFHighShrub", "s(NDVI_mean):LULC_RFLowShrub",
+                    "s(NDVI_mean):LULC_RFPineForest", "s(NDVI_mean):LULC_RFRock","s(AGH_mean):LULC_RFAgriculture",
+                    "s(AGH_mean):LULC_RFHighShrub", "s(AGH_mean):LULC_RFLowShrub", "s(AGH_mean):LULC_RFOakForest",
+                    "s(AGH_mean):LULC_RFPineForest", "s(AGH_mean):LULC_RFRock", "s(CC_min)", "s(vrd_0_mean)", 
+                    "s(vrd_0.25_mean)", "s(vrd_0.5_mean)", "s(vrd_1_mean)","s(Transect)")
+
+# Extract model information
+model_total_sum  <- summary(model_total)$s.table
+model_total_coef    <- data.frame(term = rownames(model_total_sum), F = model_total_sum[ , "F"])
+model_total_coef$term <- factor(model_total_coef$term, levels = rev(variable_order))
+model_total_coef$model <- "Total"
+
+model_shrub_sum  <- summary(model_shrub)$s.table
+model_shrub_coef    <- data.frame(term = rownames(model_shrub_sum), F = model_shrub_sum[ , "F"])
+model_shrub_coef$term <- factor(model_shrub_coef$term, levels = rev(variable_order))
+model_shrub_coef$model <- "Shrub"
+
+model_forb_sum  <- summary(model_forb)$s.table
+model_forb_coef    <- data.frame(term = rownames(model_forb_sum), F = model_forb_sum[ , "F"])
+model_forb_coef$term <- factor(model_forb_coef$term, levels = rev(variable_order))
+model_forb_coef$model <- "Forb"
+
+model_grass_sum  <- summary(model_grass)$s.table
+model_grass_coef    <- data.frame(term = rownames(model_grass_sum), F = model_grass_sum[ , "F"])
+model_grass_coef$term <- factor(model_grass_coef$term, levels = rev(variable_order))
+model_grass_coef$model <- "Grass"
+
+model_herbs_sum  <- summary(model_herbs)$s.table
+model_herbs_coef    <- data.frame(term = rownames(model_herbs_sum), F = model_herbs_sum[ , "F"])
+model_herbs_coef$term <- factor(model_herbs_coef$term, levels = rev(variable_order))
+model_herbs_coef$model <- "Herbs"
+
+model_coef <- rbind(model_total_coef,model_shrub_coef,model_forb_coef,model_grass_coef,model_herbs_coef)
+
+model_coef$category <- with(model_coef, case_when(
+  term %in% c("s(Elevation_mean)", "s(Slope_mean)", "s(Aspect_mean)") ~ "Topographic",
+  grepl("^s\\(NDVI_mean\\)", term) ~ "Spectral",
+  grepl("^s\\(AGH_mean\\)", term) ~ "Structural",
+  term %in% c("s(CC_min)", "s(vrd_0_mean)", "s(vrd_0.25_mean)", "s(vrd_0.5_mean)", "s(vrd_1_mean)") ~ "Structural",
+  term == "s(Transect)" ~ "Other",
+  TRUE ~ "Other"
+))
+
+model_coef$model <- factor(model_coef$model, levels = c("Total", "Shrub", "Herbs","Forb", "Grass"))
+model_coef$category <- factor(model_coef$category, levels = c("Topographic", "Spectral", "Structural","Other"))
+
+model_coef_main <- subset(model_coef, model != "Forb" & model != "Grass")
+
+model_coef_main <- model_coef_main %>% 
+  group_by(term) %>% 
+  filter(any(F > 1e-3)) %>%          # keep if at least one model has F > 0
+  ungroup()
+
+model_coef_spp <- subset(model_coef, model == "Forb" | model == "Grass")
+
+model_coef_spp <- model_coef_spp %>% 
+  group_by(term) %>% 
+  filter(any(F > 1e-3)) %>%          # keep if at least one model has F > 0
+  ungroup()
+
+## Plot
+
+png(filename = file.path(figures_path,"Figure_2_Variable_importance.png"),
+    width = 30, height = 30, units = "cm",bg = "white", res = 300)
+
+ggplot(model_coef_main, aes(x = term, y = F, fill = category)) +
+  geom_col() +
+  facet_wrap(~model) +
+  coord_flip() +
+  scale_fill_manual(values = c("Topographic" = "#0072B2","Spectral"    = "#009E73", "Structural"  = "#D55E00",                        "Other"       = "#F0E442")) +
+  scale_y_continuous(breaks = c(0, 1, 10, 100), trans = scales::pseudo_log_trans(base = 10), labels = c("0", "1", "10", "100"),expand = expansion(mult = c(0.05, 0.1))) +
+  labs(x = NULL, y = "log10(F‑statistic)",fill = "Variable group",title = "Relative smooth‑term importance across models") +
+  theme_bw() +
+  theme(axis.text.y = element_text(size = 12), axis.text.x = element_text(size = 12), 
+        strip.text = element_text(size = 15,face="bold"), plot.title = element_text(size=20,face="bold"),
+        legend.text = element_text(size = 12), legend.title = element_text(size = 15,face="bold"))
+
+dev.off()
+
+png(filename = file.path(figures_path,"Figure_S8_Variable_importance_forb_grass.png"),
+    width = 30, height = 30, units = "cm",bg = "white", res = 300)
+
+ggplot(model_coef_spp, aes(x = term, y = F, fill = category)) +
+  geom_col() +
+  facet_wrap(~model) +
+  coord_flip() +
+  scale_fill_manual(values = c("Topographic" = "#0072B2","Spectral"    = "#009E73", "Structural"  = "#D55E00",                        "Other"       = "#F0E442")) +
+  scale_y_continuous(breaks = c(0, 1, 10, 100), trans = scales::pseudo_log_trans(base = 10), labels = c("0", "1", "10", "100"),expand = expansion(mult = c(0.05, 0.1))) +
+  labs(x = NULL, y = "log10(F‑statistic)",fill = "Variable group",title = "Relative smooth‑term importance across models") +
+  theme_bw() +
+  theme(axis.text.y = element_text(size = 10), axis.text.x = element_text(size = 10), 
+        strip.text = element_text(size = 15,face="bold"), plot.title = element_text(size=20,face="bold"),
+        legend.text = element_text(size = 12), legend.title = element_text(size = 15,face="bold"))
+
+dev.off()
+```
+
+### Predicted vs. observed biomass from cross-validation
+
+```{r, warning=FALSE}
+cv_mod %>% 
+  mutate_if(is.numeric, round,digits=2)
+
+cv_mod
+
+png(filename = file.path(figures_path,"Figure_3_Cross_validation_results.png"),
+    width = 30, height = 30, units = "cm",bg = "white", res = 300)
+grid.arrange(total_plot, shrub_plot, herb_plot, layout_matrix = rbind(c(1,1), c(2,3)))
+dev.off()
+
+png(filename = file.path(figures_path,"Figure_S8_Cross_validation_results_forb_grass.png"),
+    width = 30, height = 15, units = "cm",bg = "white", res = 300)
+grid.arrange(forb_plot, grass_plot, layout_matrix = rbind(c(1,2)))
+dev.off()
+
+```
+
+##### Predict Biomass across study area
+
+```{r, warning=FALSE}
+
+LULC_color <- c("yellow","darkgoldenrod","darkgoldenrod1","chartreuse2","chartreuse4","gray62")
+
+# Read grid data for entire study area
+grid_data <- read.csv(file.path(data_path,"grid_data.csv"),header=T,sep=";")
+grid_data$LULC_RF <- factor(grid_data$LULC_RF, levels = levels(biomass_data$LULC_RF))
+grid_data$Transect <- "A1_2024"
+grid_data$Transect <- factor(grid_data$Transect, levels(biomass_data$Transect))
+
+grid_data <- na.omit(grid_data)
+```
+
+### Total Biomass
+
+```{r, warning=FALSE}
+# Predict biomass
+grid_predict_total <- predict.gam(model_total,newdata=grid_data,se.fit=T,type="response", exclude = "s(Transect)")
+grid_data$Predict_total <- grid_predict_total$fit
+grid_data$SE_total <- grid_predict_total$se.fit
+grid_data$CV_total <- grid_predict_total$se.fit/grid_predict_total$fit
+
+# Get summary statistics 
+mean(biomass_data$Total_biomass,na.rm = TRUE)
+median(biomass_data$Total_biomass,na.rm = TRUE)
+sd(biomass_data$Total_biomass, na.rm = TRUE) / sqrt(nrow(biomass_data))
+sd(biomass_data$Total_biomass, na.rm = TRUE) 
+print(paste(round(quantile(biomass_data$Total_biomass, 0.25, na.rm = TRUE), 2), 
+            "-", round(quantile(biomass_data$Total_biomass, 0.75, na.rm = TRUE), 2)))
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Total_biomass, na.rm = TRUE), nsmall = 2),
+            median_biomass = format(median(Total_biomass, na.rm = TRUE), nsmall = 2),
+            SE_biomass = format(sd(Total_biomass, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Total_biomass, na.rm = TRUE), nsmall = 2),
+            Quartile_range = paste(round(quantile(Total_biomass, 0.25, na.rm = TRUE), 2), 
+                                         "-", round(quantile(Total_biomass, 0.75, na.rm = TRUE), 2)))
+
+mean(grid_data$Predict_total)
+median(grid_data$Predict_total)
+sd(grid_data$Predict_total) / sqrt(nrow(grid_data))
+sd(grid_data$Predict_total, na.rm = TRUE) 
+print(paste(round(quantile(grid_data$Predict_total, 0.25, na.rm = TRUE), 2), 
+            "-", round(quantile(grid_data$Predict_total, 0.75, na.rm = TRUE), 2)))
+grid_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Predict_total), nsmall = 2),
+            median_biomass = format(median(Predict_total), nsmall = 2),
+            SE_biomass = format(sd(Predict_total) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Predict_total), nsmall = 2),
+            Quartile_range = paste(round(quantile(Predict_total, 0.25, na.rm = TRUE), 2), 
+                                   "-", round(quantile(Predict_total, 0.75, na.rm = TRUE), 2)))
+
+
+mean(grid_data$CV_total)
+sd(grid_data$CV_total) / sqrt(nrow(grid_data))
+sd(grid_data$CV_total) 
+grid_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_CV = format(mean(CV_total), nsmall = 2),
+            SE_CV = format(sd(CV_total) / sqrt(n()), nsmall = 2),
+            SD_CV = format(sd(CV_total), nsmall = 2))
+
+# Plot predictions 
+
+total_1 <- ggplot(biomass_data, aes(x = LULC_RF, y=Total_biomass,fill=LULC_RF)) +
+  geom_boxplot() +
+  scale_fill_manual(values=LULC_color) +
+  ylim(0,1000) +
+  labs(title="Observed Total Biomass ",x="Land use", y="Total biomass") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+        axis.text=element_text(size=12), axis.title=element_text(size=14),
+        legend.position="none")
+
+total_2 <- ggplot(grid_data, aes(x = LULC_RF, y=Predict_total,fill=LULC_RF)) +
+  geom_boxplot() +
+  scale_fill_manual(values=LULC_color) +
+  ylim(0,1000) +
+  labs(title="Predicted Total Biomass",x="Land use", y="Total biomass") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+        axis.text=element_text(size=12), axis.title=element_text(size=14),
+        legend.position="none")
+
+total_3 <- ggplot(grid_data, aes(x = LULC_RF, y=Predict_total,fill=LULC_RF)) +
+  geom_boxplot() +
+  scale_fill_manual(values=LULC_color) +
+  ylim(0,1000) +
+  labs(title="Predicted Total Biomass ",x="Land use", y="Predicted total biomass") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+        axis.text=element_text(size=12), axis.title=element_text(size=14),
+        legend.position="none")
+
+total_4 <- ggplot(grid_data, aes(x = LULC_RF, y=CV_total,fill=LULC_RF)) +
+  geom_boxplot() +
+  scale_fill_manual(values=LULC_color) +
+  ylim(0,1) +
+  labs(title="Coefficient of Variation (CV) - Total Biomass",x="Land use", y="CV") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+        axis.text=element_text(size=12), axis.title=element_text(size=14),
+        legend.position="none")
+
+```
+
+### Shrub Biomass
+
+```{r, warning=FALSE}
+grid_predict_shrub <- predict.gam(model_shrub,newdata=grid_data,se.fit=T,type="response", exclude = "s(Transect)")
+grid_data$Predict_shrub <- grid_predict_shrub$fit
+grid_data$SE_shrub <- grid_predict_shrub$se.fit
+grid_data$CV_shrub <- grid_predict_shrub$se.fit/grid_predict_shrub$fit
+
+# Get summary statistics 
+
+mean(biomass_data$Shrub_biomass,na.rm = TRUE)
+median(biomass_data$Shrub_biomass,na.rm = TRUE)
+sd(biomass_data$Shrub_biomass, na.rm = TRUE) / sqrt(nrow(biomass_data))
+sd(biomass_data$Shrub_biomass, na.rm = TRUE)
+print(paste(round(quantile(biomass_data$Shrub_biomass, 0.25, na.rm = TRUE), 2), 
+            "-", round(quantile(biomass_data$Shrub_biomass, 0.75, na.rm = TRUE), 2)))
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Shrub_biomass, na.rm = TRUE), nsmall = 2),
+            median_biomass = format(median(Shrub_biomass, na.rm = TRUE), nsmall = 2),
+            SE_biomass = format(sd(Shrub_biomass, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Shrub_biomass, na.rm = TRUE), nsmall = 2),
+            Quartile_range = paste(round(quantile(Shrub_biomass, 0.25, na.rm = TRUE), 2), 
+                                   "-", round(quantile(Shrub_biomass, 0.75, na.rm = TRUE), 2)))
+
+mean(grid_data$Predict_shrub)
+median(grid_data$Predict_shrub)
+sd(grid_data$Predict_shrub) / sqrt(nrow(grid_data))
+sd(grid_data$Predict_shrub)
+print(paste(round(quantile(grid_data$Predict_shrub, 0.25, na.rm = TRUE), 2), 
+            "-", round(quantile(grid_data$Predict_shrub, 0.75, na.rm = TRUE), 2)))
+grid_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Predict_shrub), nsmall = 2),
+            median_biomass = format(median(Predict_shrub), nsmall = 2),
+            SE_biomass = format(sd(Predict_shrub) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Predict_shrub), nsmall = 2),
+            Quartile_range = paste(round(quantile(Predict_shrub, 0.25, na.rm = TRUE), 2), 
+                                   "-", round(quantile(Predict_shrub, 0.75, na.rm = TRUE), 2)))
+
+
+mean(grid_data$CV_shrub)
+sd(grid_data$CV_shrub) / sqrt(nrow(grid_data))
+sd(grid_data$CV_shrub) 
+grid_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_CV = format(mean(CV_shrub), nsmall = 2),
+            SE_CV = format(sd(CV_shrub) / sqrt(n()), nsmall = 2),
+            SD_CV = format(sd(CV_shrub), nsmall = 2))
+
+# Plot predictions 
+
+shrub_1 <- ggplot(biomass_data, aes(x = LULC_RF, y=Shrub_biomass,fill=LULC_RF)) +
+  geom_boxplot() +
+  scale_fill_manual(values=LULC_color) +
+  ylim(0,1000) +
+  labs(title="Observed Shrub Biomass ",x="Land use", y="Shrub biomass") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+        axis.text=element_text(size=12), axis.title=element_text(size=14),
+        legend.position="none")
+
+shrub_2 <- ggplot(grid_data, aes(x = LULC_RF, y=Predict_shrub,fill=LULC_RF)) +
+  geom_boxplot() +
+  scale_fill_manual(values=LULC_color) +
+  ylim(0,1000) +
+  labs(title="Predicted Shrub Biomass",x="Land use", y="Shrub biomass") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+        axis.text=element_text(size=12), axis.title=element_text(size=14),
+        legend.position="none")
+
+shrub_3 <- ggplot(grid_data, aes(x = LULC_RF, y=Predict_shrub,fill=LULC_RF)) +
+  geom_boxplot() +
+  scale_fill_manual(values=LULC_color) +
+  ylim(0,1000) +
+  labs(title="Predicted Shrub Biomass ",x="Land use", y="Shrub biomass") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+        axis.text=element_text(size=12), axis.title=element_text(size=14),
+        legend.position="none")
+
+shrub_4 <- ggplot(grid_data, aes(x = LULC_RF, y=CV_shrub,fill=LULC_RF)) +
+  geom_boxplot() +
+  scale_fill_manual(values=LULC_color) +
+  ylim(0,1) +
+  labs(title="Coefficient of Variation (CV) - Shrub Biomass",x="Land use", y="CV") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+        axis.text=element_text(size=12), axis.title=element_text(size=14),
+        legend.position="none")
+
+```
+
+### Forb Biomass
+
+```{r, warning=FALSE}
+grid_predict_forb <- predict.gam(model_forb_lulc,newdata=grid_data,se.fit=T,type="response", exclude = "s(Transect)")
+grid_data$Predict_forb <- grid_predict_forb$fit
+grid_data$SE_forb <- grid_predict_forb$se.fit
+grid_data$CV_forb <- grid_predict_forb$se.fit/grid_predict_forb$fit
+
+# Get summary statistics 
+
+mean(biomass_data$Forb_biomass,na.rm = TRUE)
+median(biomass_data$Forb_biomass,na.rm = TRUE)
+sd(biomass_data$Forb_biomass, na.rm = TRUE) / sqrt(nrow(biomass_data))
+sd(biomass_data$Forb_biomass, na.rm = TRUE)
+print(paste(round(quantile(biomass_data$Forb_biomass, 0.25, na.rm = TRUE), 2), 
+            "-", round(quantile(biomass_data$Forb_biomass, 0.75, na.rm = TRUE), 2)))
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Forb_biomass, na.rm = TRUE), nsmall = 2),
+            median_biomass = format(median(Forb_biomass, na.rm = TRUE), nsmall = 2),
+            SE_biomass = format(sd(Forb_biomass, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Forb_biomass, na.rm = TRUE), nsmall = 2),
+            Quartile_range = paste(round(quantile(Forb_biomass, 0.25, na.rm = TRUE), 2), 
+                                   "-", round(quantile(Forb_biomass, 0.75, na.rm = TRUE), 2)))
+
+
+mean(grid_data$Predict_forb)
+median(grid_data$Predict_forb)
+sd(grid_data$Predict_forb) / sqrt(nrow(grid_data))
+sd(grid_data$Predict_forb)
+print(paste(round(quantile(grid_data$Predict_forb, 0.25, na.rm = TRUE), 2), 
+            "-", round(quantile(grid_data$Predict_forb, 0.75, na.rm = TRUE), 2)))
+grid_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Predict_forb), nsmall = 2),
+            median_biomass = format(median(Predict_forb), nsmall = 2),
+            SE_biomass = format(sd(Predict_forb) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Predict_forb), nsmall = 2),
+            Quartile_range = paste(round(quantile(Predict_forb, 0.25, na.rm = TRUE), 2), 
+                                   "-", round(quantile(Predict_forb, 0.75, na.rm = TRUE), 2)))
+
+
+mean(grid_data$CV_forb)
+sd(grid_data$CV_forb) / sqrt(nrow(grid_data))
+sd(grid_data$CV_forb)
+grid_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_CV = format(mean(CV_forb), nsmall = 2),
+            SE_CV = format(sd(CV_forb) / sqrt(n()), nsmall = 2),
+            SD_CV = format(sd(CV_forb), nsmall = 2))
+
+# Plot predictions 
+
+forb_1 <- ggplot(biomass_data, aes(x = LULC_RF, y=Forb_biomass,fill=LULC_RF)) +
+  geom_boxplot() +
+  scale_fill_manual(values=LULC_color) +
+  ylim(0,70) +
+  labs(title="Observed Forb Biomass ",x="Land use", y="Forb biomass") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+        axis.text=element_text(size=12), axis.title=element_text(size=14),
+        legend.position="none")
+
+forb_2 <- ggplot(grid_data, aes(x = LULC_RF, y=Predict_forb,fill=LULC_RF)) +
+  geom_boxplot() +
+  scale_fill_manual(values=LULC_color) +
+  ylim(0,70) +
+  labs(title="Predicted Forb Biomass",x="Land use", y="Forb biomass") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+        axis.text=element_text(size=12), axis.title=element_text(size=14),
+        legend.position="none")
+
+forb_3 <- ggplot(grid_data, aes(x = LULC_RF, y=Predict_forb,fill=LULC_RF)) +
+  geom_boxplot() +
+  scale_fill_manual(values=LULC_color) +
+  ylim(0,70) +
+  labs(title="Predicted Forb Biomass",x="Land use", y="Forb biomass") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+        axis.text=element_text(size=12), axis.title=element_text(size=14),
+        legend.position="none")
+
+forb_4 <- ggplot(grid_data, aes(x = LULC_RF, y=CV_forb,fill=LULC_RF)) +
+  geom_boxplot() +
+  scale_fill_manual(values=LULC_color) +
+  ylim(0,1) +
+  labs(title="Coefficient of Variation (CV) - Forb Biomass",x="Land use", y="CV") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+        axis.text=element_text(size=12), axis.title=element_text(size=14),
+        legend.position="none")
+
+```
+
+### Grass Biomass
+
+```{r, warning=FALSE}
+grid_predict_grass <- predict.gam(model_grass_lulc,newdata=grid_data,se.fit=T,type="response", exclude = "s(Transect)")
+grid_data$Predict_grass <- grid_predict_grass$fit
+grid_data$SE_grass <- grid_predict_grass$se.fit
+grid_data$CV_grass <- grid_predict_grass$se.fit/grid_predict_grass$fit
+
+# Get summary statistics 
+
+mean(biomass_data$Grass_biomass, na.rm = TRUE)
+median(biomass_data$Grass_biomass, na.rm = TRUE)
+sd(biomass_data$Grass_biomass, na.rm = TRUE) / sqrt(nrow(biomass_data))
+sd(biomass_data$Grass_biomass, na.rm = TRUE)
+print(paste(round(quantile(biomass_data$Grass_biomass, 0.25, na.rm = TRUE), 2), 
+            "-", round(quantile(biomass_data$Grass_biomass, 0.75, na.rm = TRUE), 2)))
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Grass_biomass, na.rm = TRUE), nsmall = 2),
+            median_biomass = format(median(Grass_biomass, na.rm = TRUE), nsmall = 2),
+            SE_biomass = format(sd(Grass_biomass, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Grass_biomass, na.rm = TRUE), nsmall = 2),
+            Quartile_range = paste(round(quantile(Grass_biomass, 0.25, na.rm = TRUE), 2), 
+                                   "-", round(quantile(Grass_biomass, 0.75, na.rm = TRUE), 2)))
+
+
+mean(grid_data$Predict_grass)
+median(grid_data$Predict_grass)
+sd(grid_data$Predict_grass, na.rm = TRUE) / sqrt(nrow(grid_data))
+sd(grid_data$Predict_grass)
+print(paste(round(quantile(grid_data$Predict_grass, 0.25, na.rm = TRUE), 2), 
+            "-", round(quantile(grid_data$Predict_grass, 0.75, na.rm = TRUE), 2)))
+grid_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Predict_grass), nsmall = 2),
+            median_biomass = format(median(Predict_grass), nsmall = 2),
+            SE_biomass = format(sd(Predict_grass) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Predict_grass), nsmall = 2),
+            Quartile_range = paste(round(quantile(Predict_grass, 0.25, na.rm = TRUE), 2), 
+                                   "-", round(quantile(Predict_grass, 0.75, na.rm = TRUE), 2)))
+
+
+mean(grid_data$CV_grass)
+sd(grid_data$CV_grass) / sqrt(nrow(grid_data))
+sd(grid_data$CV_grass) 
+grid_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_CV = format(mean(CV_grass), nsmall = 2),
+            SE_CV = format(sd(CV_grass) / sqrt(n()), nsmall = 2),
+            SD_CV = format(sd(CV_grass), nsmall = 2))
+
+# Plot predictions 
+
+grass_1 <- ggplot(biomass_data, aes(x = LULC_RF, y=Grass_biomass,fill=LULC_RF)) +
+  geom_boxplot() +
+  scale_fill_manual(values=LULC_color) +
+  ylim(0,70) +
+  labs(title="Observed Grass Biomass ",x="Land use", y="Grass biomass") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+        axis.text=element_text(size=12), axis.title=element_text(size=14),
+        legend.position="none")
+
+grass_2 <- ggplot(grid_data, aes(x = LULC_RF, y=Predict_grass,fill=LULC_RF)) +
+  geom_boxplot() +
+  scale_fill_manual(values=LULC_color) +
+  ylim(0,70) +
+  labs(title="Predicted Grass Biomass",x="Land use", y="Grass biomass") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+        axis.text=element_text(size=12), axis.title=element_text(size=14),
+        legend.position="none")
+
+grass_3 <- ggplot(grid_data, aes(x = LULC_RF, y=Predict_grass,fill=LULC_RF)) +
+  geom_boxplot() +
+  scale_fill_manual(values=LULC_color) +
+  ylim(0,70) +
+  labs(title="Predicted Grass Biomass",x="Land use", y="Grass biomass") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+        axis.text=element_text(size=12), axis.title=element_text(size=14),
+        legend.position="none")
+
+grass_4 <- ggplot(grid_data, aes(x = LULC_RF, y=CV_grass,fill=LULC_RF)) +
+  geom_boxplot() +
+  scale_fill_manual(values=LULC_color) +
+  ylim(0,1) +
+  labs(title="Coefficient of Variation (CV) - Grass Biomass",x="Land use", y="CV") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+        axis.text=element_text(size=12), axis.title=element_text(size=14),
+        legend.position="none")
+
+```
+
+### Herbaceous Biomass
+
+```{r, warning=FALSE}
+grid_predict_herb <- predict.gam(model_herbs_lulc,newdata=grid_data,se.fit=T,type="response", exclude = "s(Transect)")
+grid_data$Predict_herb <- grid_predict_herb$fit
+grid_data$SE_herb <- grid_predict_herb$se.fit
+grid_data$CV_herb <- grid_predict_herb$se.fit/grid_predict_herb$fit
+
+# Get summary statistics 
+
+mean(biomass_data$Herb_biomass, na.rm = TRUE)
+median(biomass_data$Herb_biomass, na.rm = TRUE)
+sd(biomass_data$Herb_biomass, na.rm = TRUE) / sqrt(nrow(biomass_data))
+sd(biomass_data$Herb_biomass, na.rm = TRUE)
+print(paste(round(quantile(biomass_data$Herb_biomass, 0.25, na.rm = TRUE), 2), 
+            "-", round(quantile(biomass_data$Herb_biomass, 0.75, na.rm = TRUE), 2)))
+biomass_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Herb_biomass, na.rm = TRUE), nsmall = 2),
+            median_biomass = format(median(Herb_biomass, na.rm = TRUE), nsmall = 2),
+            SE_biomass = format(sd(Herb_biomass, na.rm = TRUE) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Herb_biomass, na.rm = TRUE), nsmall = 2),
+            Quartile_range = paste(round(quantile(Herb_biomass, 0.25, na.rm = TRUE), 2), 
+                                   "-", round(quantile(Herb_biomass, 0.75, na.rm = TRUE), 2)))
+
+mean(grid_data$Predict_herb)
+median(grid_data$Predict_herb)
+sd(grid_data$Predict_herb) / sqrt(nrow(grid_data))
+sd(grid_data$Predict_herb)
+print(paste(round(quantile(grid_data$Predict_herb, 0.25, na.rm = TRUE), 2), 
+            "-", round(quantile(grid_data$Predict_herb, 0.75, na.rm = TRUE), 2)))
+grid_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_biomass = format(mean(Predict_herb), nsmall = 2),
+            median_biomass = format(median(Predict_herb), nsmall = 2),
+            SE_biomass = format(sd(Predict_herb) / sqrt(n()), nsmall = 2),
+            SD_biomass = format(sd(Predict_herb), nsmall = 2),
+            Quartile_range = paste(round(quantile(Predict_herb, 0.25, na.rm = TRUE), 2), 
+                                   "-", round(quantile(Predict_herb, 0.75, na.rm = TRUE), 2)))
+
+mean(grid_data$CV_herb,na.rm=T)
+sd(grid_data$CV_herb) / sqrt(nrow(grid_data))
+sd(grid_data$CV_herb) 
+grid_data %>%
+  group_by(LULC_RF) %>%
+  summarise(mean_CV = format(mean(CV_herb), nsmall = 2),
+            SE_CV = format(sd(CV_herb) / sqrt(n()), nsmall = 2),
+            SD_CV = format(sd(CV_herb), nsmall = 2))
+
+# Plot predictions 
+
+herb_1 <- ggplot(biomass_data, aes(x = LULC_RF, y=Herb_biomass,fill=LULC_RF)) +
+  geom_boxplot() +
+  scale_fill_manual(values=LULC_color) +
+  ylim(0,150) +
+  labs(title="Observed Herbaceous Biomass ",x="Land use", y="Herbaceous biomass") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+        axis.text=element_text(size=12), axis.title=element_text(size=14),
+        legend.position="none")
+
+herb_2 <- ggplot(grid_data, aes(x = LULC_RF, y=Predict_herb,fill=LULC_RF)) +
+  geom_boxplot() +
+  scale_fill_manual(values=LULC_color) +
+  ylim(0,150) +
+  labs(title="Predicted Herbaceous Biomass",x="Land use", y="Herbaceous biomass") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+        axis.text=element_text(size=12), axis.title=element_text(size=14),
+        legend.position="none")
+
+herb_3 <- ggplot(grid_data, aes(x = LULC_RF, y=Predict_herb,fill=LULC_RF)) +
+  geom_boxplot() +
+  scale_fill_manual(values=LULC_color) +
+  ylim(0,150) +
+  labs(title="Predicted Herbaceous Biomass",x="Land use", y="Herbaceous biomass") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+        axis.text=element_text(size=12), axis.title=element_text(size=14),
+        legend.position="none")
+
+herb_4 <- ggplot(grid_data, aes(x = LULC_RF, y=CV_herb,fill=LULC_RF)) +
+  geom_boxplot() +
+  scale_fill_manual(values=LULC_color) +
+  ylim(0,1) +
+  labs(title="Coefficient of Variation (CV) - Herbaceous Biomass",x="Land use", y="CV") +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),
+        axis.text=element_text(size=12), axis.title=element_text(size=14),
+        legend.position="none")
+```
+
+
+#### Summary
+```{r, warning=FALSE}
+# Save results 
+write.table(grid_data,file.path(data_path,"Grid_predict.csv"),row.names=F,sep=",")
+
+list(
+  total_biomass = sum(grid_data$Predict_total*100/ 1e6),
+  shrub_biomass = sum(grid_data$Predict_shrub*100/ 1e6),
+  forb_biomass = sum(grid_data$Predict_forb*100/ 1e6),
+  grass_biomass = sum(grid_data$Predict_grass*100/ 1e6),
+  herb_biomass = sum(grid_data$Predict_herb*100/ 1e6)
+)
+
+biomass<- grid_data %>%
+  summarise(
+    Area_ha = (n() * 100) / 10000,
+    # Total biomass calculations
+    Total_biomass_tons = sum(Predict_total * 100 / 1e6),
+    Total_biomass_sd = mean(Predict_total) * mean(CV_total),
+    Total_biomass_tons_ha = Total_biomass_tons / Area_ha,
+    Total_biomass_sd_per_ha = sqrt((mean(CV_total)^2 * mean(Predict_total)^2) / Area_ha), 
+    # Shrub biomass calculations
+    Shrub_biomass_tons = sum(Predict_shrub * 100 / 1e6),
+    Shrub_biomass_sd = mean(Predict_shrub) * mean(CV_shrub),
+    Shrub_biomass_tons_ha = Shrub_biomass_tons / Area_ha,
+    Shrub_biomass_sd_per_ha = sqrt((mean(CV_shrub)^2 * mean(Predict_shrub)^2) / Area_ha),
+    # Forb biomass calculations
+    Forb_biomass_tons = sum(Predict_forb * 100 / 1e6),
+    Forb_biomass_sd = mean(Predict_forb) * mean(CV_forb),
+    Forb_biomass_tons_ha = Forb_biomass_tons / Area_ha,
+    Forb_biomass_sd_per_ha = sqrt((mean(CV_forb)^2 * mean(Predict_forb)^2) / Area_ha),
+    # Grass biomass calculations
+    Grass_biomass_tons = sum(Predict_grass * 100 / 1e6),
+    Grass_biomass_sd = mean(Predict_grass) * mean(CV_grass),
+    Grass_biomass_tons_ha = Grass_biomass_tons / Area_ha,
+    Grass_biomass_sd_per_ha = sqrt((mean(CV_grass)^2 * mean(Predict_grass)^2) / Area_ha),
+    # Herb biomass calculations
+    Herb_biomass_tons = sum(Predict_herb * 100 / 1e6),
+    Herb_biomass_sd = mean(Predict_herb) * mean(CV_herb),
+    Herb_biomass_tons_ha = Herb_biomass_tons / Area_ha,
+    Herb_biomass_sd_per_ha = sqrt((mean(CV_herb)^2 * mean(Predict_herb)^2) / Area_ha)
+  )
+
+biomass_by_LULC <- grid_data %>%
+  group_by(LULC_RF) %>%
+  summarise(
+    Area_ha = (n() * 100) / 10000,
+    # Total biomass calculations
+    Total_biomass_tons = sum(Predict_total * 100 / 1e6),
+    Total_biomass_sd = mean(Predict_total) * mean(CV_total),
+    Total_biomass_tons_ha = Total_biomass_tons / Area_ha,
+    Total_biomass_sd_per_ha = sqrt((mean(CV_total)^2 * mean(Predict_total)^2) / Area_ha), 
+    # Shrub biomass calculations
+    Shrub_biomass_tons = sum(Predict_shrub * 100 / 1e6),
+    Shrub_biomass_sd = mean(Predict_shrub) * mean(CV_shrub),
+    Shrub_biomass_tons_ha = Shrub_biomass_tons / Area_ha,
+    Shrub_biomass_sd_per_ha = sqrt((mean(CV_shrub)^2 * mean(Predict_shrub)^2) / Area_ha),
+    # Forb biomass calculations
+    Forb_biomass_tons = sum(Predict_forb * 100 / 1e6),
+    Forb_biomass_sd = mean(Predict_forb) * mean(CV_forb),
+    Forb_biomass_tons_ha = Forb_biomass_tons / Area_ha,
+    Forb_biomass_sd_per_ha = sqrt((mean(CV_forb)^2 * mean(Predict_forb)^2) / Area_ha),
+    # Grass biomass calculations
+    Grass_biomass_tons = sum(Predict_grass * 100 / 1e6),
+    Grass_biomass_sd = mean(Predict_grass) * mean(CV_grass),
+    Grass_biomass_tons_ha = Grass_biomass_tons / Area_ha,
+    Grass_biomass_sd_per_ha = sqrt((mean(CV_grass)^2 * mean(Predict_grass)^2) / Area_ha),
+    # Herb biomass calculations
+    Herb_biomass_tons = sum(Predict_herb * 100 / 1e6),
+    Herb_biomass_sd = mean(Predict_herb) * mean(CV_herb),
+    Herb_biomass_tons_ha = Herb_biomass_tons / Area_ha,
+    Herb_biomass_sd_per_ha = sqrt((mean(CV_herb)^2 * mean(Predict_herb)^2) / Area_ha)
+  )
+
+biomass
+biomass_by_LULC
+
+png(filename = file.path(figures_path,"Figure_S10.1_Observed_pred_biomass_distribution.png"),
+    width = 30, height = 45, units = "cm",bg = "white", res = 300)
+print(grid.arrange(total_1, total_2, shrub_1, shrub_2, herb_1, herb_2, forb_1, forb_2, grass_1, grass_2, nrow=5,widths=c(1/2,1/2)))
+dev.off()
+
+png(filename = file.path(figures_path,"Figure_S10.2_Pred_biomass_CV_distribution.png"),
+    width = 30, height = 45, units = "cm",bg = "white", res = 300)
+print(grid.arrange(total_3, total_4, shrub_3, shrub_4, herb_3, herb_4, forb_3, forb_4, grass_3, grass_4, nrow=5,widths=c(1/2,1/2)))
+dev.off()
+
+png(filename = file.path(figures_path,"Figure_S10.3_Historgramms_HAB_distribution.png"),
+    width = 30, height = 45, units = "cm",bg = "white", res = 300)
+
+par(mfrow=c(5,3))
+hist(grid_data$Predict_total,xlim=c(0,1000),breaks=25,main="Predicted Total HAB")
+hist(grid_data$SE_total,xlim=c(0,200),breaks=25,main="SE Predicted Total HAB")
+hist(grid_data$CV_total*100,xlim=c(0,100),breaks=25,main="CV Predicted Total HAB")
+
+hist(grid_data$Predict_shrub,xlim=c(0,1000),breaks=200,main="Predicted Shrub HAB")
+hist(grid_data$SE_shrub,xlim=c(0,200),breaks=2500,main="SE Predicted Shrub HAB")
+hist(grid_data$CV_shrub*100,xlim=c(0,100),breaks=100,main="CV Predicted Shrub HAB")
+
+hist(grid_data$Predict_herb,xlim=c(0,100),breaks=25,main="Predicted Herb HAB")
+hist(grid_data$SE_herb,xlim=c(0,50),breaks=25,main="SE Predicted Herb HAB")
+hist(grid_data$CV_herb*100,xlim=c(0,120),breaks=10,main="CV Predicted Herb HAB")
+
+hist(grid_data$Predict_forb,xlim=c(0,100),breaks=10,main="Predicted Forb HAB")
+hist(grid_data$SE_forb,xlim=c(0,20),breaks=50,main="SE Predicted Forb HAB")
+hist(grid_data$CV_forb*100,xlim=c(0,120),breaks=250,main="CV Predicted Forb HAB")
+
+hist(grid_data$Predict_grass,xlim=c(0,100),breaks=15,main="Predicted Grass HAB")
+hist(grid_data$SE_grass,xlim=c(0,50),breaks=25,main="SE Predicted Grass HAB")
+hist(grid_data$CV_grass*100,xlim=c(0,120),breaks=15,main="CV Predicted Grass HAB")
+
+dev.off()
+```
+
+
