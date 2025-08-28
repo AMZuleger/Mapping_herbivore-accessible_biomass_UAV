@@ -17,11 +17,13 @@ Herbivore-accessible biomass (HAB), defined as aboveground biomass under 2 m, 
           
   - *grid_data.csv* - Remote sensing metrics across the entire study area on a 10 x 10 m grid for predictions
  
-- *Figures.zip* - Contains all figures for the publication (including Supplemental):
+- *Figures_main.zip* - Contains all figures of the main document:
   - *Figure_1_Study_Location_and_Sampling_Design.png* - Study Location and Sampling Design.
   - *Figure_2_Variable_Importance.png* - F-Statistics per variable obtained from GAMMs for total, shrub and herbaceous HAB
   - *Figure_3_Cross_validation_results.png* - Predicted vs. observed biomass across total (top), shrub (bottom left), and herbaceous HAB (bottom right) using hold-out cross-validation. 
   - *Figure_4_HAB_Predictions_CV_Maps.png* - HAB predictions and coefficient of variation of the predictions across the entire study area for total, shrub and herbaceous HAB.
+
+- *Figures_supplemental.zip* - Contains all figures of the supplemental document:
   - *Figure_S2_Height_distribution.png* - Histogramms of mean and maximum height measurements from field data per vegetation type.
   - *Figure_S4_Remote_Sensing_Metrics.png* - Maps of all remote sensing metrics used in the final models.
   - *Figure_S5.1_Correlation_plot.png* - Correlation plot between all variables.
